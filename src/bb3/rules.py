@@ -5,7 +5,8 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from types import MappingProxyType
+from typing import Any, Mapping
 
 
 class BB3RulesError(RuntimeError):
@@ -35,6 +36,56 @@ class RuleRecord:
 
     def get(self, key: str, default: Any = None) -> Any:
         return self.data.get(key, default)
+
+
+@dataclass(frozen=True, slots=True)
+class TypedRule:
+    """Typed convenience view that retains its complete raw rule record."""
+
+    record: RuleRecord
+
+    @property
+    def table(self) -> str:
+        return self.record.table
+
+    @property
+    def data(self) -> dict[str, Any]:
+        return self.record.data
+
+    @property
+    def code(self) -> int | None:
+        return self.record.code
+
+    @property
+    def name(self) -> str | None:
+        return self.record.name
+
+    def __getitem__(self, key: str) -> Any:
+        return self.record[key]
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.record.get(key, default)
+
+
+@dataclass(frozen=True, slots=True)
+class RaceRule(TypedRule):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class SkillRule(TypedRule):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class TeamImprovementRule(TypedRule):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class PositionRule(TypedRule):
+    characteristics: Mapping[str, int]
+    skills: tuple[str, ...]
 
 
 class BB3Rules:
@@ -90,26 +141,36 @@ class BB3Rules:
         except KeyError as exc:
             raise KeyError(f"No {table} record named {name!r}") from exc
 
-    def position_by_code(self, code: int) -> RuleRecord:
-        return self.by_code("bb3_rules_position", code)
+    def position_by_code(self, code: int) -> PositionRule:
+        return self._position_rule(self.by_code("bb3_rules_position", code))
 
-    def position(self, name: str) -> RuleRecord:
-        return self.by_name("bb3_rules_position", name)
+    def position(self, name: str) -> PositionRule:
+        return self._position_rule(self.by_name("bb3_rules_position", name))
 
-    def race_by_code(self, code: int) -> RuleRecord:
-        return self.by_code("bb3_rules_race", code)
+    def race_by_code(self, code: int) -> RaceRule:
+        return RaceRule(self.by_code("bb3_rules_race", code))
 
-    def race(self, name: str) -> RuleRecord:
-        return self.by_name("bb3_rules_race", name)
+    def race(self, name: str) -> RaceRule:
+        return RaceRule(self.by_name("bb3_rules_race", name))
 
-    def skill_by_code(self, code: int) -> RuleRecord:
-        return self.by_code("bb3_rules_skill", code)
+    def skill_by_code(self, code: int) -> SkillRule:
+        return SkillRule(self.by_code("bb3_rules_skill", code))
+
+    def skill(self, name: str) -> SkillRule:
+        return SkillRule(self.by_name("bb3_rules_skill", name))
 
     def special_rule_by_code(self, code: int) -> RuleRecord:
         return self.by_code("bb3_rules_special_rule", code)
 
-    def team_improvement_by_code(self, code: int) -> RuleRecord:
-        return self.by_code("bb3_rules_team_improvement", code)
+    def team_improvement_by_code(self, code: int) -> TeamImprovementRule:
+        return TeamImprovementRule(
+            self.by_code("bb3_rules_team_improvement", code)
+        )
+
+    def team_improvement(self, name: str) -> TeamImprovementRule:
+        return TeamImprovementRule(
+            self.by_name("bb3_rules_team_improvement", name)
+        )
 
     def position_characteristics(self, position_name: str) -> dict[str, int]:
         result: dict[str, int] = {}
@@ -127,6 +188,16 @@ class BB3Rules:
             if item.get("position") == position_name and isinstance(item.get("skill"), str):
                 result.append(item["skill"])
         return result
+
+    def _position_rule(self, record: RuleRecord) -> PositionRule:
+        name = record.name
+        characteristics = self.position_characteristics(name) if name else {}
+        skills = self.position_skills(name) if name else []
+        return PositionRule(
+            record=record,
+            characteristics=MappingProxyType(characteristics),
+            skills=tuple(skills),
+        )
 
     def _build_indexes(self) -> None:
         for table, values in self.payload.items():

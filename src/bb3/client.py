@@ -4,8 +4,9 @@ import base64
 import json
 import socket
 import xml.etree.ElementTree as ET
+from collections import deque
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 from .constants import DEFAULT_CLIENT_VERSION
 from .discovery import discover_bb3_endpoint
@@ -56,6 +57,9 @@ class BB3Client:
         self.body_token = 0
         self._steam_auth = steam_auth
         self._steam_ticket = None
+        self._inbox: deque[BB3Frame] = deque()
+        self._subscribers: dict[str | None, list[Callable[[BB3Frame], None]]] = {}
+        self._callback_errors: deque[tuple[BB3Frame, Exception]] = deque()
 
     @classmethod
     def from_steam(cls, *, helper=None, cache_path=".bb3-steam-auth.json", **kwargs):
@@ -76,14 +80,24 @@ class BB3Client:
         self.sock.settimeout(self.timeout)
 
     def close(self) -> None:
+        socket_error: OSError | None = None
         try:
-            if self.sock is not None:
-                self.sock.close()
-                self.sock = None
+            sock, self.sock = self.sock, None
+            if sock is not None:
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                try:
+                    sock.close()
+                except OSError as exc:
+                    socket_error = exc
         finally:
             if self._steam_auth is not None:
-                self._steam_auth.close()
                 self._steam_ticket = None
+                self._steam_auth.close()
+        if socket_error is not None:
+            raise socket_error
 
     def __enter__(self) -> "BB3Client":
         try:
@@ -116,18 +130,91 @@ class BB3Client:
         expected_name: str,
         expected_message_token: int,
     ) -> BB3Frame:
+        queued = self._take_queued(expected_name, expected_message_token)
+        if queued is not None:
+            return queued
+
         sock = self._socket()
         while True:
             frame = recv_frame(sock)
-            if frame.message_name == "KeepAliveAdvice":
-                continue
             if (
                 frame.message_name == expected_name
                 and frame.message_token == expected_message_token
             ):
                 return frame
-            # Notifications and unrelated asynchronous responses are ignored here.
-            # A production event dispatcher can be layered on later.
+            self._dispatch(frame)
+
+    def _take_queued(
+        self,
+        expected_name: str,
+        expected_message_token: int,
+    ) -> BB3Frame | None:
+        for index, frame in enumerate(self._inbox):
+            if (
+                frame.message_name == expected_name
+                and frame.message_token == expected_message_token
+            ):
+                self._inbox.rotate(-index)
+                result = self._inbox.popleft()
+                self._inbox.rotate(index)
+                return result
+        return None
+
+    def _dispatch(self, frame: BB3Frame) -> None:
+        """Queue an unsolicited frame and notify matching subscribers."""
+        self._inbox.append(frame)
+        callbacks = (
+            *self._subscribers.get(frame.message_name, ()),
+            *self._subscribers.get(None, ()),
+        )
+        for callback in callbacks:
+            try:
+                callback(frame)
+            except Exception as exc:
+                # Callback failures must not corrupt transport correlation.
+                self._callback_errors.append((frame, exc))
+
+    def subscribe(
+        self,
+        message_name: str | None,
+        callback: Callable[[BB3Frame], None],
+    ) -> None:
+        """Subscribe to a message name, or to all messages with ``None``."""
+        callbacks = self._subscribers.setdefault(message_name, [])
+        if callback not in callbacks:
+            callbacks.append(callback)
+
+    def unsubscribe(
+        self,
+        message_name: str | None,
+        callback: Callable[[BB3Frame], None],
+    ) -> None:
+        callbacks = self._subscribers.get(message_name)
+        if callbacks is None:
+            return
+        try:
+            callbacks.remove(callback)
+        except ValueError:
+            return
+        if not callbacks:
+            del self._subscribers[message_name]
+
+    def pop_notification(self, message_name: str | None = None) -> BB3Frame | None:
+        """Remove the oldest queued unsolicited frame, optionally by name."""
+        for index, frame in enumerate(self._inbox):
+            if message_name is None or frame.message_name == message_name:
+                self._inbox.rotate(-index)
+                result = self._inbox.popleft()
+                self._inbox.rotate(index)
+                return result
+        return None
+
+    @property
+    def pending_notifications(self) -> tuple[BB3Frame, ...]:
+        return tuple(self._inbox)
+
+    def pop_callback_error(self) -> tuple[BB3Frame, Exception] | None:
+        return self._callback_errors.popleft() if self._callback_errors else None
 
     @staticmethod
     def _assert_success(frame: BB3Frame) -> ET.Element:

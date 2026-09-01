@@ -186,6 +186,15 @@ print(rules.position_skills(wardancer.name))
 print(rules.sha256)
 ```
 
+Typed position views retain raw data while exposing common relationships:
+
+```python
+position = rules.position_by_code(1102)
+print(position.characteristics)
+print(position.skills)
+print(position.record)
+```
+
 The file contains rule definitions such as races, positions, characteristics, skills, skill-category affinities, roster definitions, special rules, casualties, inducements and team improvements. Runtime/backend state remains separate from these static definitions.
 
 `BB3Rules.json` and `bb3rulesengine/` are ignored by Git.
@@ -232,6 +241,17 @@ List/recover BB3 frames from a raw Follow TCP Stream export:
 ```bash
 python tools/parse_tcp_stream.py stream.bin
 ```
+
+Reconstruct TCP directions independently from pcap or pcapng:
+
+```bash
+python tools/parse_pcap.py capture.pcapng --port 17010 --output-prefix bb3-stream
+```
+
+The pcap parser handles Ethernet or raw-IP IPv4/IPv6 TCP, separates both
+directions, removes retransmitted overlap and splits streams at sequence gaps.
+Written stream chunks are redacted with length-preserving replacements so BB3
+frame offsets remain usable without persisting labelled credentials.
 
 Analyze collection tags and cosmetic setters across **all `.bin` files in a directory**:
 

@@ -102,7 +102,7 @@ The returned host/port must be used for the TCP connection.
 
 ---
 
-## TODO — Improve session lifecycle
+## PARTIAL — Improve session lifecycle
 
 Priority: `P1`
 
@@ -122,6 +122,19 @@ Tasks:
 * ensure Steam helper process terminates correctly
 * test interrupted/debugger-aborted sessions
 * determine server timeout for abandoned sessions
+
+Implemented locally:
+
+* socket ownership is cleared before shutdown, making repeated close safe
+* TCP shutdown and close occur before Steam-helper cleanup
+* helper cleanup still runs if socket close fails
+* context-entry failure and repeated-close behavior have offline tests
+
+Still requires live protocol data:
+
+* explicit logout request, if one exists
+* abandoned-session timeout
+* immediate relogin verification after clean shutdown
 
 Acceptance criteria:
 
@@ -883,7 +896,7 @@ Raw access should remain available for reverse engineering and forward compatibi
 
 ---
 
-## TODO — Strong typed rule models
+## PARTIAL — Strong typed rule models
 
 Priority: `P1`
 
@@ -915,6 +928,15 @@ position = data.rules.position_by_code(1102)
 print(position.skills)
 print(position.characteristics)
 ```
+
+Implemented without schema guesses:
+
+* typed `PositionRule`, `RaceRule`, `SkillRule`, and `TeamImprovementRule`
+* position characteristics and starting skills
+* every typed view retains its complete raw `RuleRecord`
+
+Remaining types require representative sanitized static-data fixtures before
+their relationships can be modeled safely.
 
 ---
 
@@ -1103,7 +1125,7 @@ Determine:
 
 # 13. Event and protocol discovery
 
-## TODO — Message catalog
+## DONE — Message catalog
 
 Priority: `P1`
 
@@ -1137,9 +1159,13 @@ This should eventually include:
 * verified/unverified status
 * example capture reference if available
 
+Implemented in `docs/messages.json` with an offline consistency test against
+literal request/response pairs in the client. Capture references remain absent
+where the repository has no sanitized capture corpus.
+
 ---
 
-## TODO — Unknown enum tracking
+## DONE — Unknown enum tracking
 
 Priority: `P2`
 
@@ -1154,6 +1180,9 @@ Maintain discovered but unresolved:
 * collection types
 
 Do not silently guess enum meanings.
+
+Implemented in `docs/unknown-enums.json`. Entries carry explicit status and
+evidence, and tests reject meanings without a recognized evidence label.
 
 ---
 
@@ -1177,7 +1206,7 @@ Current parser should recover by scanning for plausible `<Header>` boundaries.
 
 ---
 
-## TODO — Proper pcap half-stream reconstruction
+## PARTIAL — Proper pcap half-stream reconstruction
 
 Priority: `P1`
 
@@ -1200,6 +1229,23 @@ MessageToken
 body Token
 decoded body
 ```
+
+Implemented offline:
+
+* classic pcap and pcapng readers
+* Ethernet and raw-IP IPv4/IPv6 TCP decoding
+* independent directional grouping
+* overlap/retransmission removal
+* stream splitting at missing sequence ranges
+* synthetic pcap and pcapng tests
+
+Remaining:
+
+* IPv4 fragment and IPv6 extension-header handling
+* TCP sequence-number wraparound
+* timestamps per decoded BB3 frame rather than per contiguous TCP chunk
+* direct BB3 frame parsing/correlation in the pcap command
+* verification against real retransmission-heavy captures
 
 ---
 
@@ -1232,7 +1278,7 @@ Implemented:
 
 # 15. Client architecture
 
-## TODO — Event dispatcher
+## PARTIAL — Event dispatcher
 
 Priority: `P1`
 
@@ -1246,6 +1292,20 @@ Implement a dispatcher capable of:
 * callbacks/subscriptions
 * replay/live-game events
 * graceful cancellation
+
+Implemented for the synchronous client:
+
+* unexpected frames are queued rather than discarded
+* queued responses can later satisfy message-name/token correlation
+* message-specific and wildcard subscriptions
+* callback failures are isolated and retrievable
+* keepalive advice is available as an unsolicited notification
+
+Remaining:
+
+* background reading/concurrent outstanding requests
+* replay/live-game event semantics
+* explicit cancellation primitives
 
 ---
 
@@ -1363,7 +1423,7 @@ Tests should operate against sanitized captures rather than requiring live backe
 
 # 17. Documentation
 
-## TODO — Protocol documentation
+## PARTIAL — Protocol documentation
 
 Priority: `P1`
 
@@ -1392,9 +1452,13 @@ INFERRED
 UNKNOWN
 ```
 
+Core framing, tokens, response handling, authentication and replay sections now
+carry evidence labels and link to the machine-readable catalogs. Remaining
+older sections still need claim-by-claim classification.
+
 ---
 
-## TODO — Data source documentation
+## DONE — Data source documentation
 
 Priority: `P1`
 
@@ -1416,6 +1480,9 @@ SPCs.json
 TextGeneration.json
 ShopData.json
 ```
+
+Implemented in `docs/DATA_SOURCES.md`, including source precedence, archive
+roles, raw-data preservation and identifier namespace boundaries.
 
 ---
 

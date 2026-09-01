@@ -1,6 +1,18 @@
 # BB3 protocol notes
 
+Status vocabulary:
+
+- **VERIFIED** — confirmed against the live backend or a captured exchange
+- **OBSERVED** — present in a capture, without complete semantic verification
+- **INFERRED** — implementation-supported interpretation not yet live-verified
+- **UNKNOWN** — deliberately unresolved
+
+The machine-readable request catalog is [`messages.json`](messages.json).
+Unresolved enum values are tracked in [`unknown-enums.json`](unknown-enums.json).
+
 ## Framing
+
+**VERIFIED**
 
 ```text
 uint32 LE header_length
@@ -23,6 +35,8 @@ Header example:
 
 ## Tokens
 
+**VERIFIED**
+
 Three different token concepts were observed:
 
 - `MessageToken`: framing/request correlation counter
@@ -32,6 +46,8 @@ Three different token concepts were observed:
 Keepalive traffic advances `MessageToken` without advancing body `<Token>`.
 
 ## Response contract
+
+**INFERRED from observed responses; covered by offline tests**
 
 The public `BB3Client.request()` method returns the parsed response XML root
 after validating server exceptions and an explicit `Result=0`. A successful
@@ -55,6 +71,8 @@ explicit and must be handled as sensitive diagnostic data.
 
 ## Steam AuthToken
 
+**VERIFIED**
+
 Observed working BB3 AuthToken:
 
 ```text
@@ -64,6 +82,8 @@ raw Steam auth session ticket (270 bytes observed)
 ```
 
 ## Replay
+
+**VERIFIED**
 
 Request:
 
