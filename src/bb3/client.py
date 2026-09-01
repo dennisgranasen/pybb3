@@ -113,28 +113,51 @@ class BB3Client:
 
     @staticmethod
     def _assert_success(frame: BB3Frame) -> ET.Element:
-        root = parse_xml(frame.body)
+        root = ET.fromstring(frame.body)
 
         result = root.findtext("Result")
-        if result is not None and result != "1":
-            raise BB3RequestError(
-                f"{frame.message_name} Result={result}: {frame.body[:4000]}"
-            )
-
-        exceptions = root.find("Exceptions")
-        if exceptions is not None and len(exceptions):
-            raise BB3RequestError(
-                f"{frame.message_name} returned exceptions: {frame.body[:4000]}"
-            )
 
         exception = root.find("Exception")
+        exceptions = root.find("Exceptions")
+
+        # Explicit exception
         if exception is not None:
+            code_text = exception.findtext("Code")
+            desc_b64 = exception.findtext("Desc")
+
+            code = int(code_text) if code_text else None
+            description = None
+
+            if desc_b64:
+                try:
+                    description = base64.b64decode(desc_b64).decode("utf-8")
+                except (ValueError, UnicodeDecodeError):
+                    description = desc_b64
+
             raise BB3RequestError(
-                f"{frame.message_name} returned exception: {frame.body[:4000]}"
+                f"{frame.message_name} failed "
+                f"(code {code}): {description or 'Unknown error'}"
             )
 
-        return root
+        # Some responses use <Exceptions>...</Exceptions>
+        if exceptions is not None and len(exceptions):
+            raise BB3RequestError(
+                f"{frame.message_name} returned exceptions: "
+                f"{ET.tostring(exceptions, encoding='unicode')}"
+            )
 
+        # Explicit Result field: 0 = failure, non-zero = success
+        if result is not None:
+            if result == "0":
+                raise BB3RequestError(
+                    f"{frame.message_name} Result={result}: "
+                    f"{frame.body[:4000]}"
+                )
+
+            return frame
+
+        # No Result and no exception = valid success response
+        return frame
     def keepalive(self) -> None:
         mt = self._next_message_token()
         send_frame(
@@ -267,7 +290,7 @@ class BB3Client:
             else "<ChosenSpecialRule/>"
         )
 
-        root = self.request(
+        frame = self.request(
             "RequestCreateTeam",
             "ResponseCreateTeam",
             (
@@ -279,9 +302,16 @@ class BB3Client:
                 f"{special_rule_xml}"
             ),
         )
+
+        root = ET.fromstring(frame.body)
+
         encoded = root.findtext("IdTeam")
         if not encoded:
-            raise BB3RequestError("CreateTeam returned no IdTeam")
+            raise BB3RequestError(
+                f"{frame.message_name} did not contain IdTeam: "
+                f"{frame.body[:4000]}"
+            )
+
         return b64_decode_text(encoded)
 
     def delete_team(self, team_id: str) -> ET.Element:
