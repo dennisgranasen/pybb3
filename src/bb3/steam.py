@@ -9,6 +9,8 @@ import subprocess
 import sys
 from typing import Callable, Mapping, Sequence
 
+from .config import dotenv_values, environment_value
+
 DEFAULT_AUTH_CACHE = ".bb3-steam-auth.json"
 
 
@@ -25,31 +27,18 @@ class SteamAuthState:
     guard_data: str | None = None
 
 
-def _dotenv_values(path: Path) -> dict[str, str]:
-    if not path.is_file():
-        return {}
-    values: dict[str, str] = {}
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-            value = value[1:-1]
-        values[key.strip()] = value
-    return values
-
-
 def resolve_credentials(
     *, environ: Mapping[str, str] | None = None,
     dotenv_path: str | Path = ".env",
     input_fn: Callable[[str], str] = input,
 ) -> tuple[str, str | None]:
-    env = os.environ if environ is None else environ
-    dotenv = _dotenv_values(Path(dotenv_path))
-    username = env.get("STEAM_USERNAME") or dotenv.get("STEAM_USERNAME")
-    password = env.get("STEAM_PASSWORD") or dotenv.get("STEAM_PASSWORD")
+    dotenv = dotenv_values(dotenv_path)
+    username = environment_value(
+        "STEAM_USERNAME", environ=environ, dotenv=dotenv
+    )
+    password = environment_value(
+        "STEAM_PASSWORD", environ=environ, dotenv=dotenv
+    )
     if not username:
         username = input_fn("Steam account login name: ").strip()
     if not username:

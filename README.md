@@ -126,6 +126,32 @@ ReplayData
 
 The game ships a useful rules database in its own data files, for example under an `OfflineServer/bb3rulesengine` directory. This repository does **not** redistribute that file.
 
+For archive and static-data APIs, the recommended configuration is the Blood
+Bowl 3 installation root in `.env`:
+
+```dotenv
+BB3_PATH=C:\Program Files (x86)\Steam\steamapps\common\Blood Bowl 3
+```
+
+This resolves `BB3/Content/OfflineServer/bb3rulesengine.zip` and
+`BB3/Content/OfflineServer/bb3.zip` beneath the installation. Advanced setups
+can override either archive independently; any archive without an override
+continues to resolve through `BB3_PATH`:
+
+```dotenv
+# BB3_RULES_ENGINE_ZIP=C:\path\to\bb3rulesengine.zip
+# BB3_DATA_ZIP=C:\path\to\bb3.zip
+```
+
+Real environment variables override `.env` values. Resolve and validate the
+configured archives with:
+
+```python
+from bb3 import BB3Data
+
+data = BB3Data.from_env()
+```
+
 Point the client at your local copy:
 
 ```bash
