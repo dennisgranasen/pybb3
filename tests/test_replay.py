@@ -1,7 +1,7 @@
 import base64
 import zlib
 
-from bb3_client.replay import decode_replay_data
+from bb3.replay import decode_replay_data
 
 
 def test_replay_decode_chain():

@@ -13,7 +13,7 @@ authors = [{name = "Dennis Granåsen"}]
 dependencies = []
 
 [project.scripts]
-bb3 = "bb3_client.cli:main"
+bb3 = "bb3.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

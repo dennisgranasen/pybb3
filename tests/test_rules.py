@@ -1,6 +1,6 @@
 import json
 
-from bb3_client.rules import BB3Rules
+from bb3.rules import BB3Rules
 
 
 def test_rules_indexes_and_position_helpers(tmp_path):

@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from bb3_client.discovery import discover_bb3_endpoint
+from bb3.discovery import discover_bb3_endpoint
 
 
 class FakeResponse:
@@ -26,7 +26,7 @@ class FakeConnection:
 
 
 def test_discovery_parses_tcp_endpoint():
-    with patch("bb3_client.discovery.http.client.HTTPConnection", FakeConnection):
+    with patch("bb3.discovery.http.client.HTTPConnection", FakeConnection):
         endpoint = discover_bb3_endpoint("bb3-win-steam-shipping-57968")
     assert endpoint.host == "app18.bb3.cyanide-studio.com"
     assert endpoint.port == 17010

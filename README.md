@@ -114,7 +114,7 @@ export BB3_RULES_FILE=/path/to/BB3Rules.json
 or load it directly:
 
 ```python
-from bb3_client import BB3Rules
+from bb3 import BB3Rules
 
 rules = BB3Rules.load("/path/to/BB3Rules.json")
 wardancer = rules.position_by_code(1102)
