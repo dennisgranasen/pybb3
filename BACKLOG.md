@@ -201,7 +201,7 @@ RequestLogin
 
 ---
 
-## TODO — Structured server exceptions
+## DONE — Structured server exceptions
 
 Priority: `P1`
 
@@ -225,6 +225,16 @@ Requirements:
 * preserve raw response for diagnostics
 * support both `<Exception>` and `<Exceptions>`
 * do not assume every successful response contains `<Result>`
+
+Implemented:
+
+* `BB3RequestError` exposes `code`, `description`, `message_name`,
+  `raw_response`, and the original response `frame`
+* both direct `<Exception>` and wrapped `<Exceptions>` responses are handled
+* failure descriptions are Base64-decoded when possible
+* `request()` consistently returns a validated XML root
+* `request_frame()` preserves low-level raw frame access
+* automatically formatted error messages redact labelled secrets
 
 Known successful response example:
 
@@ -283,11 +293,21 @@ Successful response contains:
 
 ---
 
-## TODO — Get team / roster
+## BLOCKED — Get team / roster
 
 Priority: `P0`
 
 Reverse engineer and implement the response for retrieving the full current team roster.
+
+Current blocker:
+
+* the repository has no captured or sanitized `ResponseGetTeamRoster` body
+* field names and nesting cannot be implemented without inventing protocol data
+
+Required next input:
+
+* one sanitized successful roster response, preferably for a team containing
+  players, skills, an injury, and team improvements
 
 Primary target:
 
@@ -1183,7 +1203,7 @@ decoded body
 
 ---
 
-## TODO — Sensitive-data redaction
+## DONE — Sensitive-data redaction
 
 Priority: `P0`
 
@@ -1197,6 +1217,16 @@ All capture/debug tooling must redact:
 * legacy Cyanide/API credentials
 
 Redaction should happen before logs are persisted.
+
+Implemented:
+
+* central text redaction for XML, JSON, dotenv-style assignments, and bearer
+  authorization values
+* recursive mapping redaction for structured diagnostics
+* BB3 request error messages are redacted while `raw_response` remains
+  explicitly available for controlled diagnostics
+* current capture tools emit frame metadata or non-secret collection IDs and
+  do not persist decoded authentication request bodies
 
 ---
 
@@ -1267,7 +1297,7 @@ Existing tests cover at least parts of:
 
 ---
 
-## TODO — Live integration tests
+## PARTIAL — Live integration tests
 
 Priority: `P1`
 
@@ -1301,6 +1331,13 @@ Acceptance criteria:
 * unit tests never access Steam or BB3 backend
 * live tests are clearly separated
 * destructive tests require explicit opt-in
+
+Implemented:
+
+* live tests require `PYBB3_RUN_LIVE_TESTS=1`
+* destructive tests additionally require `PYBB3_ALLOW_DESTRUCTIVE_TESTS=1`
+* pytest markers are registered centrally
+* test collection itself performs no network or account mutation
 
 ---
 
@@ -1393,32 +1430,30 @@ Codex should generally work in this order unless a task explicitly says otherwis
 3. `GetGameResult`
 4. structured MatchResult
 5. player advancement protocol
-6. sensitive-data redaction
-7. robust response/exception handling
 
 ## P1
 
-8. graceful session lifecycle/logout
-9. delete-team protocol
-10. collection-item ID semantics
-11. runtime injury mapping
-12. redraft
-13. journeymen
-14. event dispatcher
-15. reconnect behavior
-16. proper pcap half-stream reconstruction
+6. graceful session lifecycle/logout
+7. delete-team protocol
+8. collection-item ID semantics
+9. runtime injury mapping
+10. redraft
+11. journeymen
+12. event dispatcher
+13. reconnect behavior
+14. proper pcap half-stream reconstruction
 
 ## P2
 
-17. cosmetics completeness
-18. formation semantics
-19. typed static-rule convenience APIs
-20. async client
+15. cosmetics completeness
+16. formation semantics
+17. typed static-rule convenience APIs
+18. async client
 
 ## P3
 
-21. Special Play Card runtime API
-22. legacy shop/content mapping improvements
+19. Special Play Card runtime API
+20. legacy shop/content mapping improvements
 
 ---
 

@@ -31,6 +31,28 @@ Three different token concepts were observed:
 
 Keepalive traffic advances `MessageToken` without advancing body `<Token>`.
 
+## Response contract
+
+The public `BB3Client.request()` method returns the parsed response XML root
+after validating server exceptions and an explicit `Result=0`. A successful
+response does not need to contain `Result`; empty `<Exceptions/>` is valid.
+
+Low-level consumers can use `BB3Client.request_frame()` to retain the complete
+`BB3Frame` and raw body.
+
+Request failures raise `BB3RequestError` with:
+
+- `code`
+- `description`
+- `message_name`
+- `raw_response`
+- `frame`
+
+Both a direct `<Exception>` and exception records inside `<Exceptions>` are
+supported. `Desc` is Base64-decoded when possible. Human-readable exception
+messages are redacted before they can be printed; raw response access is
+explicit and must be handled as sensitive diagnostic data.
+
 ## Steam AuthToken
 
 Observed working BB3 AuthToken:

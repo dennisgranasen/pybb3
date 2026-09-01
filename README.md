@@ -24,6 +24,10 @@ Capture-verified or end-to-end verified:
 
 Some methods intentionally remain unimplemented where the exact request body has not yet been captured (notably team deletion).
 
+Full structured roster parsing also awaits a sanitized real
+`ResponseGetTeamRoster`; the client deliberately does not guess unknown field
+names or enum meanings.
+
 ## Install
 
 ```bash
@@ -31,6 +35,17 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -e .
 ```
+
+Install test dependencies and run the offline suite with:
+
+```bash
+pip install -e '.[test]'
+pytest
+```
+
+Live tests are skipped unless `PYBB3_RUN_LIVE_TESTS=1` is set. Tests that
+mutate account state additionally require
+`PYBB3_ALLOW_DESTRUCTIVE_TESTS=1`.
 
 Windows:
 

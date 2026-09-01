@@ -13,10 +13,28 @@ from .encoding import b64_decode_text, b64_encode_text
 from .models import Formation
 from .protocol import BB3Frame, BB3ProtocolError, parse_xml, recv_frame, send_frame
 from .replay import decode_replay_data
+from .security import redact_text
 
 
 class BB3RequestError(BB3ProtocolError):
-    pass
+    """A syntactically valid BB3 response that reports request failure."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: int | None = None,
+        description: str | None = None,
+        message_name: str | None = None,
+        raw_response: str | None = None,
+        frame: BB3Frame | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.description = description
+        self.message_name = message_name
+        self.raw_response = raw_response
+        self.frame = frame
 
 
 class BB3Client:
@@ -113,37 +131,44 @@ class BB3Client:
 
     @staticmethod
     def _assert_success(frame: BB3Frame) -> ET.Element:
-        root = ET.fromstring(frame.body)
+        root = parse_xml(frame.body)
 
         result = root.findtext("Result")
 
         exception = root.find("Exception")
         exceptions = root.find("Exceptions")
 
-        # Explicit exception
+        # Some responses wrap one or more exception records in <Exceptions>.
+        if exception is None and exceptions is not None and len(exceptions):
+            exception = exceptions.find("Exception")
+            if exception is None:
+                exception = exceptions[0]
+
         if exception is not None:
             code_text = exception.findtext("Code")
             desc_b64 = exception.findtext("Desc")
 
-            code = int(code_text) if code_text else None
+            try:
+                code = int(code_text) if code_text else None
+            except ValueError:
+                code = None
             description = None
 
             if desc_b64:
                 try:
                     description = base64.b64decode(desc_b64).decode("utf-8")
-                except (ValueError, UnicodeDecodeError):
+                except (ValueError, UnicodeDecodeError, base64.binascii.Error):
                     description = desc_b64
 
             raise BB3RequestError(
                 f"{frame.message_name} failed "
-                f"(code {code}): {description or 'Unknown error'}"
-            )
-
-        # Some responses use <Exceptions>...</Exceptions>
-        if exceptions is not None and len(exceptions):
-            raise BB3RequestError(
-                f"{frame.message_name} returned exceptions: "
-                f"{ET.tostring(exceptions, encoding='unicode')}"
+                f"(code {code}): "
+                f"{redact_text(description) if description else 'Unknown error'}",
+                code=code,
+                description=description,
+                message_name=frame.message_name,
+                raw_response=frame.body,
+                frame=frame,
             )
 
         # Explicit Result field: 0 = failure, non-zero = success
@@ -151,13 +176,18 @@ class BB3Client:
             if result == "0":
                 raise BB3RequestError(
                     f"{frame.message_name} Result={result}: "
-                    f"{frame.body[:4000]}"
+                    f"{redact_text(frame.body[:4000])}",
+                    description="Result=0",
+                    message_name=frame.message_name,
+                    raw_response=frame.body,
+                    frame=frame,
                 )
 
-            return frame
+            return root
 
         # No Result and no exception = valid success response
-        return frame
+        return root
+
     def keepalive(self) -> None:
         mt = self._next_message_token()
         send_frame(
@@ -168,12 +198,13 @@ class BB3Client:
         )
         self._wait_for("NotificationKeepAlive", mt)
 
-    def request(
+    def request_frame(
         self,
         request_name: str,
         response_name: str,
         extra_xml: str = "",
-    ) -> ET.Element:
+    ) -> BB3Frame:
+        """Send a request and return its raw correlated response frame."""
         mt = self._next_message_token()
         token = self._next_body_token()
         body = (
@@ -184,7 +215,16 @@ class BB3Client:
             f"</{request_name}>"
         )
         send_frame(self._socket(), request_name, mt, body)
-        frame = self._wait_for(response_name, mt)
+        return self._wait_for(response_name, mt)
+
+    def request(
+        self,
+        request_name: str,
+        response_name: str,
+        extra_xml: str = "",
+    ) -> ET.Element:
+        """Send a request and return its validated XML response root."""
+        frame = self.request_frame(request_name, response_name, extra_xml)
         return self._assert_success(frame)
 
     def get_server_status(self) -> ET.Element:
@@ -290,7 +330,7 @@ class BB3Client:
             else "<ChosenSpecialRule/>"
         )
 
-        frame = self.request(
+        root = self.request(
             "RequestCreateTeam",
             "ResponseCreateTeam",
             (
@@ -303,13 +343,13 @@ class BB3Client:
             ),
         )
 
-        root = ET.fromstring(frame.body)
-
         encoded = root.findtext("IdTeam")
         if not encoded:
             raise BB3RequestError(
-                f"{frame.message_name} did not contain IdTeam: "
-                f"{frame.body[:4000]}"
+                "ResponseCreateTeam did not contain IdTeam: "
+                f"{redact_text(ET.tostring(root, encoding='unicode')[:4000])}",
+                message_name="ResponseCreateTeam",
+                raw_response=ET.tostring(root, encoding="unicode"),
             )
 
         return b64_decode_text(encoded)
