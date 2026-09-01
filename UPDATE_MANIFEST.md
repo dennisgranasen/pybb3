@@ -1,0 +1,20 @@
+<ResponseGetPlayerImprovements>
+  <SkillCategories>
+    <PlayerSkillCategory>
+      <Category>1</Category>
+      <TeamValueRandom>10000</TeamValueRandom>
+      <Skills>
+        <PlayerSkill><IsAvailable>1</IsAvailable><Cost>8</Cost><TeamValue>20000</TeamValue><IsChoosable>1</IsChoosable><SkillId>8</SkillId></PlayerSkill>
+      </Skills>
+      <CostRandom>4</CostRandom><Affinity>1</Affinity><TeamValueChosen>20000</TeamValueChosen>
+      <IsRandomAvailable>1</IsRandomAvailable><IsRandomChoosable>1</IsRandomChoosable>
+    </PlayerSkillCategory>
+  </SkillCategories>
+  <IsCharacteristicAvailable>1</IsCharacteristicAvailable>
+  <SpentSpp>6</SpentSpp>
+  <ShouldCache>0</ShouldCache>
+  <Token>45</Token>
+  <IsCharacteristicChoosable>1</IsCharacteristicChoosable>
+  <Exceptions/>
+  <CharacteristicCost>20</CharacteristicCost>
+</ResponseGetPlayerImprovements>
