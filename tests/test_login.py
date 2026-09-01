@@ -23,7 +23,7 @@ def test_live_login():
 
     assert root.tag == "ResponseLogin"
 
-
+"""
 @pytest.mark.destructive
 def test_live_create_team():
     require_opt_in("PYBB3_RUN_LIVE_TESTS")
@@ -34,3 +34,16 @@ def test_live_create_team():
         team_id = client.create_team(name="pybb3 Test", race_id=2)
 
     assert team_id
+"""
+
+@pytest.mark.destructive
+def test_live_create_and_delete_team():
+    require_opt_in("PYBB3_RUN_LIVE_TESTS")
+    require_opt_in("PYBB3_ALLOW_DESTRUCTIVE_TESTS")
+
+    with BB3Client.from_steam() as client:
+        client.login()
+        team_id = client.create_team(name="pybb3 Test", race_id=2)
+        assert team_id
+        res = client.delete_team(team_id)
+    assert res.tag == "ResponseDeleteTeam"

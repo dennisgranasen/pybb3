@@ -31,6 +31,19 @@ A response can succeed without `<Result>`. Empty `<Exceptions/>` plus no direct
 `<Exception>` is a valid success response. If `<Result>` is present, `0` is a
 failure. `Exception/Desc` is Base64 in observed server errors.
 
+## Session shutdown
+
+**OBSERVED**
+
+An official-client shutdown/logout capture contained no application-level
+logout or disconnect message. The final parsed BB3 messages were an ordinary
+`NotificationKeepAlive` exchange and then the application byte stream ended.
+
+No `RequestLogout` (or equivalent) should be implemented without capture
+evidence. Current pybb3 behavior should close the TCP socket cleanly and release
+the Steam helper. Exact TCP FIN/RST parity and abandoned-session timeout remain
+transport/lifecycle research items.
+
 ## Steam AuthToken
 
 **VERIFIED**
@@ -217,6 +230,116 @@ If the coach rejects the rolled characteristic options and
 `CanTakeSecondarySkill=1`, the UI permits taking a secondary skill instead.
 The normal chosen-skill endpoint is already verified; no separate
 primary/secondary request field has been observed.
+
+## League search
+
+**OBSERVED**
+
+Captured request:
+
+```xml
+<RequestSearchLeagues>
+  <Token>...</Token>
+  <ShouldCache>false</ShouldCache>
+  <Size>9</Size>
+  <Start>0</Start>
+  <Name/>
+  <GamerId>BASE64(gamer UUID)</GamerId>
+  <IsOfficial>
+    <IsOfficialItem>false</IsOfficialItem>
+  </IsOfficial>
+  <IsGamerMember>
+    <IsGamerMemberItem>true</IsGamerMemberItem>
+  </IsGamerMember>
+  <CanGamerCreateCompetitions/>
+  <HasCompetitions/>
+  <IncludePersonalLeagues>true</IncludePersonalLeagues>
+  <Order>2</Order>
+  <Descending>true</Descending>
+</RequestSearchLeagues>
+```
+
+Response: `ResponseSearchLeagues`.
+
+Observed `LeagueHeader` data includes league ID/name, creator, `BoardId`,
+`CompetitionSettingId`, `NbCompetition`, `NbMember`, cross-play state and UGC
+identifiers. Exact enum semantics for `Order` are not assigned here.
+
+## Weekly free Warpstone
+
+**OBSERVED protocol; product semantics confirmed from UI behavior**
+
+Request:
+
+```xml
+<RequestGetFreeVcData>
+  <Token>...</Token>
+  <ShouldCache>false</ShouldCache>
+</RequestGetFreeVcData>
+```
+
+Observed response:
+
+```xml
+<ResponseGetFreeVcData>
+  <Token>...</Token>
+  <Result>1</Result>
+  <ShouldCache>0</ShouldCache>
+  <FreeVc>
+    <Retrieved>1</Retrieved>
+    <Amount>10</Amount>
+    <Id>1</Id>
+    <AvailableAt>BASE64(timestamp)</AvailableAt>
+  </FreeVc>
+</ResponseGetFreeVcData>
+```
+
+The feature is the weekly free 10-Warpstone reward. `Amount=10` is present on
+the wire. One captured `AvailableAt` decoded to `2026-09-07 14:00:00`.
+
+`Retrieved` is observed but its exact state semantics should be verified with a
+capture taken while the reward is claimable.
+
+The request that actually claims the reward has not yet been captured. Do not
+invent a claim endpoint.
+
+## Battle-pass and progression reward unlocks
+
+**OBSERVED**
+
+The manager/home capture includes write requests for available rewards:
+
+```xml
+<RequestUnlockBattlePassAvailableRewards>
+  <Token>...</Token>
+  <ShouldCache>false</ShouldCache>
+  <BattlePassIds>
+    <BattlePassIdsItem>13</BattlePassIdsItem>
+  </BattlePassIds>
+</RequestUnlockBattlePassAvailableRewards>
+```
+
+The observed response was `ResponseUnlockBattlePassAvailableRewards` with
+`Result=1` and an `UnlockedLevels` container.
+
+`RequestUnlockGamerProgressionAvailableRewards` was also observed, but its
+complete request body is not documented here until the relevant capture body is
+reviewed explicitly.
+
+These account-reward endpoints are low-priority conveniences, not core
+team-management protocol.
+
+## Gamer profile cosmetics
+
+**OBSERVED**
+
+The capture contains collection tags and setters for manager/gamer profile
+customization including `GamerAvatar`, `GamerBanner`, `GamerFrame`,
+`GamerTitle`, `RequestSetGamerAvatar`, `RequestSetGamerBanner` and
+`RequestSetGamerFrame`.
+
+These are intentionally low priority. Do not conflate manager/gamer cosmetics
+with team cosmetics.
 
 ## Replay
 

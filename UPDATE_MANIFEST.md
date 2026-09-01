@@ -1,22 +1,20 @@
-# Update manifest
+# Capture documentation update
 
-Based on current `dennisgranasen/pybb3` main plus captures through 2026-09-01.
+Updated from current pybb3 main documentation plus the
+`stream-mgr-logout.bin` parser output.
 
-Modified:
-- src/bb3/client.py
-- src/bb3/models.py
-- src/bb3/__init__.py
+Files:
+- BACKLOG.md
 - docs/PROTOCOL.md
 - docs/messages.json
-- BACKLOG.md
-- README.md
 
-Added:
-- tests/test_advancement_and_roster.py
-- tests/fixtures/team_roster.xml
-- tests/fixtures/player_improvements.xml
-- tests/fixtures/characteristic_roll.xml
-
-Not changed:
-- src/bb3/rules.py (already has skill_by_code)
-- pyproject.toml (already registers live/destructive markers)
+Changes:
+- document that no application-level logout/disconnect request was observed
+- document observed league search request/response
+- document weekly free Warpstone status (`Amount=10`, `Retrieved`, `Id`,
+  `AvailableAt`) and keep the unknown claim request as research
+- add Battle Pass / gamer progression reward unlocks as P3 conveniences
+- note gamer avatar/banner/frame/title customization as intentionally very low
+  priority
+- add only protocol fields actually present in reviewed captures; unknown request
+  bodies remain empty rather than guessed

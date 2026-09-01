@@ -119,6 +119,13 @@
       "PlayerFireInfos/PlayerFireInfosItem/PlayerId"
     ]
   },
+  "RequestGetFreeVcData": {
+    "response": "ResponseGetFreeVcData",
+    "status": "observed",
+    "direction": "client_to_server",
+    "body_fields": [],
+    "base64_fields": []
+  },
   "RequestGetGamerConfig": {
     "response": "ResponseGetGamerConfig",
     "status": "verified",
@@ -304,6 +311,48 @@
       "Formation/Name",
       "Formation/Data"
     ]
+  },
+  "RequestSearchLeagues": {
+    "response": "ResponseSearchLeagues",
+    "status": "observed",
+    "direction": "client_to_server",
+    "body_fields": [
+      "Size",
+      "Start",
+      "Name",
+      "GamerId",
+      "IsOfficial",
+      "IsGamerMember",
+      "CanGamerCreateCompetitions",
+      "HasCompetitions",
+      "IncludePersonalLeagues",
+      "Order",
+      "Descending"
+    ],
+    "base64_fields": [
+      "GamerId"
+    ]
+  },
+  "RequestSetGamerAvatar": {
+    "response": "ResponseSetGamerCustomization",
+    "status": "observed",
+    "direction": "client_to_server",
+    "body_fields": [],
+    "base64_fields": []
+  },
+  "RequestSetGamerBanner": {
+    "response": "ResponseSetGamerCustomization",
+    "status": "observed",
+    "direction": "client_to_server",
+    "body_fields": [],
+    "base64_fields": []
+  },
+  "RequestSetGamerFrame": {
+    "response": "ResponseSetGamerCustomization",
+    "status": "observed",
+    "direction": "client_to_server",
+    "body_fields": [],
+    "base64_fields": []
   },
   "RequestSetPlayerName": {
     "response": "ResponseSetPlayerName",
@@ -512,6 +561,22 @@
       "IdTeam",
       "IdColor"
     ]
+  },
+  "RequestUnlockBattlePassAvailableRewards": {
+    "response": "ResponseUnlockBattlePassAvailableRewards",
+    "status": "observed",
+    "direction": "client_to_server",
+    "body_fields": [
+      "BattlePassIds"
+    ],
+    "base64_fields": []
+  },
+  "RequestUnlockGamerProgressionAvailableRewards": {
+    "response": "ResponseUnlockGamerProgressionAvailableRewards",
+    "status": "observed",
+    "direction": "client_to_server",
+    "body_fields": [],
+    "base64_fields": []
   },
   "RequestUpdateTeamImprovements": {
     "response": "ResponseUpdateTeamImprovements",
