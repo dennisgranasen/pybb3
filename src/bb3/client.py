@@ -27,6 +27,7 @@ class BB3Client:
         port: int | None = None,
         client_version: str = DEFAULT_CLIENT_VERSION,
         timeout: float = 30.0,
+        steam_auth=None,
     ):
         self.host = host
         self.port = port
@@ -35,6 +36,14 @@ class BB3Client:
         self.sock: socket.socket | None = None
         self.message_token = 0
         self.body_token = 0
+        self._steam_auth = steam_auth
+        self._steam_ticket = None
+
+    @classmethod
+    def from_steam(cls, *, helper=None, cache_path=".bb3-steam-auth.json", **kwargs):
+        from .steam import SteamAuthProcess
+
+        return cls(steam_auth=SteamAuthProcess(helper, cache_path=cache_path), **kwargs)
 
     def connect(self) -> None:
         if self.sock is not None:
@@ -49,15 +58,24 @@ class BB3Client:
         self.sock.settimeout(self.timeout)
 
     def close(self) -> None:
-        if self.sock is not None:
-            try:
+        try:
+            if self.sock is not None:
                 self.sock.close()
-            finally:
                 self.sock = None
+        finally:
+            if self._steam_auth is not None:
+                self._steam_auth.close()
+                self._steam_ticket = None
 
     def __enter__(self) -> "BB3Client":
-        self.connect()
-        return self
+        try:
+            if self._steam_auth is not None:
+                self._steam_ticket = self._steam_auth.start()
+            self.connect()
+            return self
+        except Exception:
+            self.close()
+            raise
 
     def __exit__(self, exc_type, exc, tb) -> None:
         self.close()
@@ -165,7 +183,18 @@ class BB3Client:
             ),
         )
 
-    def login(self, steam_id: str, auth_token: str) -> ET.Element:
+    def login(
+        self,
+        steam_id: str | None = None,
+        auth_token: str | None = None,
+    ) -> ET.Element:
+        if steam_id is None or auth_token is None:
+            if self._steam_ticket is None:
+                raise ValueError(
+                    "Steam credentials are required; use BB3Client.from_steam()"
+                )
+            steam_id = self._steam_ticket.steam_id
+            auth_token = self._steam_ticket.auth_token
         # Observed BB3 startup performs keepalive, status/config, then login.
         self.keepalive()
         self.get_server_status()

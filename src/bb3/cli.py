@@ -5,36 +5,36 @@ from pathlib import Path
 
 from .client import BB3Client
 from .constants import DEFAULT_CLIENT_VERSION
-from .steam import SteamAuthProcess
 
 
 def add_connection_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--helper", required=True, help="Path to BB3SteamAuth")
+    parser.add_argument(
+        "--helper",
+        help="Path to BB3SteamAuth (auto-detected by default)",
+    )
     parser.add_argument("--host", help="Debug override; default uses bootstrap discovery")
     parser.add_argument("--port", type=int, help="Debug override; default uses bootstrap discovery")
     parser.add_argument("--client-version", default=DEFAULT_CLIENT_VERSION)
 
 
 def authenticated_client(args):
-    steam = SteamAuthProcess(args.helper)
-    ticket = steam.start()
-    client = BB3Client(
+    client = BB3Client.from_steam(
+        helper=args.helper,
         host=args.host,
         port=args.port,
         client_version=args.client_version,
     )
-    client.connect()
     try:
-        client.login(ticket.steam_id, ticket.auth_token)
+        client.__enter__()
+        client.login()
     except Exception:
         client.close()
-        steam.close()
         raise
-    return steam, client
+    return client
 
 
 def cmd_replay(args) -> int:
-    steam, client = authenticated_client(args)
+    client = authenticated_client(args)
     try:
         xml = client.download_replay(args.game_id)
         Path(args.output).write_bytes(xml)
@@ -42,11 +42,10 @@ def cmd_replay(args) -> int:
         return 0
     finally:
         client.close()
-        steam.close()
 
 
 def cmd_team_get(args) -> int:
-    steam, client = authenticated_client(args)
+    client = authenticated_client(args)
     try:
         root = client.get_team(args.team_id)
         import xml.etree.ElementTree as ET
@@ -54,22 +53,20 @@ def cmd_team_get(args) -> int:
         return 0
     finally:
         client.close()
-        steam.close()
 
 
 def cmd_team_create(args) -> int:
-    steam, client = authenticated_client(args)
+    client = authenticated_client(args)
     try:
         team_id = client.create_team(args.name, args.race)
         print(team_id)
         return 0
     finally:
         client.close()
-        steam.close()
 
 
 def cmd_player_hire(args) -> int:
-    steam, client = authenticated_client(args)
+    client = authenticated_client(args)
     try:
         player_id = client.hire_player_from_position(
             args.team_id,
@@ -79,7 +76,6 @@ def cmd_player_hire(args) -> int:
         return 0
     finally:
         client.close()
-        steam.close()
 
 
 def main() -> int:

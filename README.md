@@ -50,13 +50,34 @@ The helper in `steam-helper/` uses SteamKit2. Build it with:
 dotnet build steam-helper/BB3SteamAuth.csproj
 ```
 
-One-time bootstrap:
+Create a `.env` file in the directory where you run the client:
 
-```bash
-BB3SteamAuth bootstrap
+```dotenv
+STEAM_USERNAME=my_steam_login_name
+# STEAM_PASSWORD=
 ```
 
-For persistent headless use, provide `STEAM_USERNAME` and `STEAM_REFRESH_TOKEN` securely. Never commit passwords, Steam Guard data, refresh tokens or BB3 auth tokens.
+`STEAM_USERNAME` is the Steam account **login name**, not a SteamID64. The
+password is optional and is best omitted: Python prompts without echoing it only
+when cached Steam authentication is unavailable. Environment variables override
+values in `.env`. A first login may also require Steam Guard interaction.
+
+The ignored `.bb3-steam-auth.json` file stores the persistent Steam refresh
+token and Guard state. Later runs normally reuse it without asking for a
+password. The short-lived BB3 AuthToken is never stored there. Never commit
+passwords, Steam Guard data, refresh tokens, Steam tickets, or BB3 auth tokens.
+
+```python
+from bb3 import BB3Client
+
+with BB3Client.from_steam() as client:
+    client.login()
+    team_id = client.create_team(name="pybb3 Test", race_id=7)
+    print(team_id)
+```
+
+Race `7` is Wood Elf. The helper remains connected while the client context is
+open and is cleaned up on normal exit or exceptions.
 
 BB3 expects the Steam ticket as:
 
@@ -88,7 +109,7 @@ tcp://app18.bb3.cyanide-studio.com:17010
 ## Replays
 
 ```bash
-bb3 replay GAME_UUID --helper /path/to/BB3SteamAuth --output replay.xml
+bb3 replay GAME_UUID --output replay.xml
 ```
 
 Replay payload decoding:
