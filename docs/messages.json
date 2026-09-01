@@ -65,6 +65,48 @@
       "Tags/TagsItem"
     ]
   },
+  "RequestCreateCompetition": {
+    "response": "ResponseCreateCompetition",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "Name",
+      "Format",
+      "LeagueId",
+      "LogoId",
+      "ParticipantsNumberMax",
+      "TimerId",
+      "AdmissionMode",
+      "HasPassword",
+      "Password"
+    ],
+    "base64_fields": [
+      "Name",
+      "LeagueId",
+      "LogoId",
+      "Password"
+    ]
+  },
+  "RequestCreateLeague": {
+    "response": "ResponseCreateLeague",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "Name",
+      "Description",
+      "LogoId",
+      "HasPassword",
+      "Password",
+      "Lang",
+      "IsCrossPlay"
+    ],
+    "base64_fields": [
+      "Name",
+      "Description",
+      "LogoId",
+      "Password"
+    ]
+  },
   "RequestCreateTeam": {
     "response": "ResponseCreateTeam",
     "status": "verified",
@@ -119,6 +161,23 @@
       "PlayerFireInfos/PlayerFireInfosItem/PlayerId"
     ]
   },
+  "RequestGetAdmissionModes": {
+    "response": "ResponseGetAdmissionModes",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [],
+    "base64_fields": []
+  },
+  "RequestGetAllPitches": {
+    "response": "ResponseGetAllPitches",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "Size",
+      "Start"
+    ],
+    "base64_fields": []
+  },
   "RequestGetAllRaces": {
     "response": "ResponseGetAllRaces",
     "status": "verified",
@@ -155,8 +214,39 @@
       "IdCompetition"
     ]
   },
+  "RequestGetCompetitionContestFormats": {
+    "response": "ResponseGetCompetitionContestFormats",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "CompetitionFormat"
+    ],
+    "base64_fields": []
+  },
   "RequestGetCompetitionDay": {
     "response": "ResponseGetCompetitionDay",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "IdCompetition"
+    ],
+    "base64_fields": [
+      "IdCompetition"
+    ]
+  },
+  "RequestGetCompetitionDaysNumber": {
+    "response": "ResponseGetCompetitionDaysNumber",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "IdCompetition"
+    ],
+    "base64_fields": [
+      "IdCompetition"
+    ]
+  },
+  "RequestGetCompetitionDescription": {
+    "response": "ResponseGetCompetitionDescription",
     "status": "verified",
     "direction": "client_to_server",
     "body_fields": [
@@ -210,6 +300,19 @@
       "CompetitionId"
     ]
   },
+  "RequestGetCompetitionParticipants": {
+    "response": "ResponseGetCompetitionParticipants",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "Size",
+      "Start",
+      "CompetitionId"
+    ],
+    "base64_fields": [
+      "CompetitionId"
+    ]
+  },
   "RequestGetCompetitionParticipantsByGamer": {
     "response": "ResponseGetCompetitionRanking",
     "status": "verified",
@@ -221,6 +324,17 @@
     "base64_fields": [
       "CompetitionId",
       "GamerId"
+    ]
+  },
+  "RequestGetCompetitionParticipantsNumber": {
+    "response": "ResponseGetCompetitionParticipantsNumber",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "IdCompetition"
+    ],
+    "base64_fields": [
+      "IdCompetition"
     ]
   },
   "RequestGetCompetitionRanking": {
@@ -260,6 +374,50 @@
       "SettingId"
     ]
   },
+  "RequestGetCompetitionTeamValueExtremums": {
+    "response": "ResponseGetCompetitionTeamValueExtremums",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [],
+    "base64_fields": []
+  },
+  "RequestGetCompetitionTeamsNumbers": {
+    "response": "ResponseGetCompetitionTeamsNumbers",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "Format"
+    ],
+    "base64_fields": []
+  },
+  "RequestGetCompetitions": {
+    "response": "ResponseGetCompetitions",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "Size",
+      "Start",
+      "GamerId",
+      "LeagueId",
+      "TeamId",
+      "Name",
+      "Format",
+      "IsOfficial",
+      "IsGamerBoardMember",
+      "IsGamerParticipant",
+      "CanGamerJoin",
+      "Status",
+      "Order",
+      "Descending",
+      "IncludeGamerEternalCompetitions"
+    ],
+    "base64_fields": [
+      "GamerId",
+      "LeagueId",
+      "TeamId",
+      "Name"
+    ]
+  },
   "RequestGetFreeVcData": {
     "response": "ResponseGetFreeVcData",
     "status": "observed",
@@ -293,6 +451,19 @@
       "PlatformName",
       "OssName",
       "UserId"
+    ]
+  },
+  "RequestGetGamerPermissions": {
+    "response": "ResponseGetGamerPermissions",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "GamerId",
+      "BoardId"
+    ],
+    "base64_fields": [
+      "GamerId",
+      "BoardId"
     ]
   },
   "RequestGetGames": {
@@ -334,6 +505,69 @@
       "TeamIds/TeamIdsItem"
     ]
   },
+  "RequestGetLeague": {
+    "response": "ResponseGetLeague",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "LeagueId"
+    ],
+    "base64_fields": [
+      "LeagueId"
+    ]
+  },
+  "RequestGetLeagueDescription": {
+    "response": "ResponseGetLeagueDescription",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "LeagueId"
+    ],
+    "base64_fields": [
+      "LeagueId"
+    ]
+  },
+  "RequestGetLeagueMember": {
+    "response": "ResponseGetLeagueMember",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "LeagueId",
+      "GamerId"
+    ],
+    "base64_fields": [
+      "LeagueId",
+      "GamerId"
+    ]
+  },
+  "RequestGetLeagueMembers": {
+    "response": "ResponseGetLeagueMembers",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "Size",
+      "Start",
+      "LeagueId",
+      "Order",
+      "Descending",
+      "Name"
+    ],
+    "base64_fields": [
+      "LeagueId",
+      "Name"
+    ]
+  },
+  "RequestGetLeagueSetting": {
+    "response": "ResponseGetLeagueSetting",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "LeagueId"
+    ],
+    "base64_fields": [
+      "LeagueId"
+    ]
+  },
   "RequestGetMatchDiceRolls": {
     "response": "ResponseGetMatchDiceRolls",
     "status": "verified",
@@ -367,6 +601,17 @@
       "ParticipantId"
     ]
   },
+  "RequestGetPassword": {
+    "response": "ResponseGetPassword",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "SettingId"
+    ],
+    "base64_fields": [
+      "SettingId"
+    ]
+  },
   "RequestGetPlayerImprovements": {
     "response": "ResponseGetPlayerImprovements",
     "status": "verified",
@@ -377,6 +622,13 @@
     "base64_fields": [
       "IdPlayer"
     ]
+  },
+  "RequestGetRedraftSettingsPossibleValues": {
+    "response": "ResponseGetRedraftSettingsPossibleValues",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [],
+    "base64_fields": []
   },
   "RequestGetServerStatus": {
     "response": "ResponseGetServerStatus",
@@ -566,6 +818,105 @@
     ],
     "base64_fields": [
       "GamerId"
+    ]
+  },
+  "RequestSetAllowCustomTeams": {
+    "response": "ResponseSetCompetitionSetting",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "SettingId",
+      "AllowCustomTeams"
+    ],
+    "base64_fields": [
+      "SettingId"
+    ]
+  },
+  "RequestSetAllowExperiencedTeams": {
+    "response": "ResponseSetAllowExperiencedTeams",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "SettingId",
+      "AllowExperiencedTeams"
+    ],
+    "base64_fields": [
+      "SettingId"
+    ]
+  },
+  "RequestSetAutomaticMatchValidation": {
+    "response": "ResponseSetAutomaticMatchValidation",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "SettingId",
+      "AutomaticMatchValidation"
+    ],
+    "base64_fields": [
+      "SettingId"
+    ]
+  },
+  "RequestSetBannedPitches": {
+    "response": "ResponseSetBannedPitches",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "SettingId",
+      "BannedPitches"
+    ],
+    "base64_fields": [
+      "SettingId",
+      "BannedPitches"
+    ]
+  },
+  "RequestSetCompetitionDescription": {
+    "response": "ResponseSetCompetitionDescription",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "Idcompetition",
+      "Description"
+    ],
+    "base64_fields": [
+      "Idcompetition",
+      "Description"
+    ]
+  },
+  "RequestSetCompetitionParticipantsNumberMax": {
+    "response": "ResponseSetCompetitionParticipantsNumberMax",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "SettingId",
+      "Value"
+    ],
+    "base64_fields": [
+      "SettingId"
+    ]
+  },
+  "RequestSetEnableMatchConsequences": {
+    "response": "ResponseSetCompetitionSetting",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "SettingId",
+      "EnableMatchConsequences"
+    ],
+    "base64_fields": [
+      "SettingId"
+    ]
+  },
+  "RequestSetForcedPitch": {
+    "response": "ResponseSetForcedPitch",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "SettingId",
+      "ForcedPitchId"
+    ],
+    "base64_fields": [
+      "SettingId",
+      "ForcedPitchId"
     ]
   },
   "RequestSetGamerAvatar": {
@@ -795,6 +1146,32 @@
     "base64_fields": [
       "IdTeam",
       "IdColor"
+    ]
+  },
+  "RequestSetTvRangeMax": {
+    "response": "ResponseSetTvRangeMax",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "SettingId",
+      "TvRangeMax",
+      "SetNoLimit"
+    ],
+    "base64_fields": [
+      "SettingId"
+    ]
+  },
+  "RequestSetTvRangeMin": {
+    "response": "ResponseSetTvRangeMin",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "SettingId",
+      "TvRangeMin",
+      "SetNoLimit"
+    ],
+    "base64_fields": [
+      "SettingId"
     ]
   },
   "RequestUnlockBattlePassAvailableRewards": {

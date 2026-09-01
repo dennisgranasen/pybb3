@@ -469,6 +469,35 @@ RequestGetCompetitionFormats
 The fact that `RequestGetCompetitionParticipantsByGamer` returns
 `ResponseGetCompetitionRanking` is capture-observed and intentional.
 
+## League and competition administration
+
+**VERIFIED from the 2026-09-01 official-client capture**
+
+Implemented request families:
+
+- create/get league, league settings/description/member/member list
+- gamer permissions for a league or competition board
+- competition search and creation
+- admission modes, allowed team counts, contest formats, team-value extrema,
+  pitches and redraft possible values
+- competition description/day count/participants/password
+- participant limit, experienced teams, automatic validation, custom teams,
+  match consequences, forced/banned pitches and TV min/max mutations
+
+Two response contracts are intentionally asymmetric:
+
+```text
+RequestGetCompetitionParticipantsByGamer -> ResponseGetCompetitionRanking
+RequestSetAllowCustomTeams              -> ResponseSetCompetitionSetting
+RequestSetEnableMatchConsequences       -> ResponseSetCompetitionSetting
+```
+
+The captured competition-description mutation uses the exact field spelling
+`Idcompetition` (lower-case `c`), unlike the read endpoint's `IdCompetition`.
+
+All string identifiers and user-facing strings in these bodies are Base64.
+See [`ENUMS.md`](ENUMS.md) for capture-verified numeric meanings.
+
 ## Account conveniences
 
 ### Weekly free Warpstone

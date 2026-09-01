@@ -275,6 +275,44 @@ class GamerSummary:
     name: str | None
 
 
+@dataclass(slots=True)
+class League:
+    league_id: str | None
+    ugc_id: str | None
+    board_id: str | None
+    competition_setting_id: str | None
+    logo_id: str | None
+    name: str | None
+    creation_time: str | None
+    member_count: int
+    competition_count: int
+    is_official: bool
+    is_eternal: bool
+    is_cross_play: bool
+    raw_xml: str
+
+    @classmethod
+    def from_response(cls, root: ET.Element) -> "League":
+        league = root.find("League")
+        if league is None:
+            raise ValueError(f"{root.tag} contained no League")
+        return cls(
+            league_id=_b64(league, "Id"),
+            ugc_id=_b64(league, "UgcId"),
+            board_id=_b64(league, "BoardId"),
+            competition_setting_id=_b64(league, "CompetitionSettingId"),
+            logo_id=_b64(league, "LogoId"),
+            name=_b64(league, "Name"),
+            creation_time=_b64(league, "CreationTime"),
+            member_count=_int(league, "NbMember"),
+            competition_count=_int(league, "NbCompetition"),
+            is_official=_bool(league, "IsOfficial"),
+            is_eternal=_bool(league, "IsEternal"),
+            is_cross_play=_bool(league, "IsCrossPlay"),
+            raw_xml=ET.tostring(root, encoding="unicode"),
+        )
+
+
 @dataclass(slots=True, frozen=True)
 class TeamSummary:
     team_id: str | None

@@ -1,6 +1,7 @@
 from .client import BB3Client, BB3RequestError
 from .data import BB3Data, BB3DataError
 from .discovery import BB3DiscoveryError, BB3Endpoint, discover_bb3_endpoint
+from .enums import AdmissionMode, BoardPermission, CompetitionFormat, CompetitionStatus, LeagueRole, TimerId
 from .rules import (
     BB3Rules,
     BB3RulesError,
@@ -20,6 +21,12 @@ __all__ = [
     "BB3DiscoveryError",
     "BB3Endpoint",
     "discover_bb3_endpoint",
+    "AdmissionMode",
+    "BoardPermission",
+    "CompetitionFormat",
+    "CompetitionStatus",
+    "LeagueRole",
+    "TimerId",
     "BB3Rules",
     "BB3RulesError",
     "RuleRecord",

@@ -18,6 +18,7 @@ from .models import (
     Formation,
     GameList,
     GameResult,
+    League,
     MatchStatistics,
     PlayerImprovements,
     RandomSkillResult,
@@ -340,6 +341,108 @@ class BB3Client:
             "ResponseGetCompetitionFormats",
         )
 
+    # ---------- Leagues ----------
+
+    def create_league(
+        self,
+        name: str,
+        *,
+        description: str = "",
+        logo_id: str | None = None,
+        password: str | None = None,
+        language: int = 0,
+        is_cross_play: bool = True,
+    ) -> ET.Element:
+        return self.request(
+            "RequestCreateLeague",
+            "ResponseCreateLeague",
+            f"<Name>{b64_encode_text(name)}</Name>"
+            f"<Description>{b64_encode_text(description) if description else ''}</Description>"
+            f"<LogoId>{b64_encode_text(logo_id) if logo_id else ''}</LogoId>"
+            f"<HasPassword>{str(password is not None).lower()}</HasPassword>"
+            f"<Password>{b64_encode_text(password) if password is not None else ''}</Password>"
+            f"<Lang>{language}</Lang>"
+            f"<IsCrossPlay>{str(is_cross_play).lower()}</IsCrossPlay>",
+        )
+
+    def create_league_model(self, name: str, **kwargs) -> League:
+        return League.from_response(self.create_league(name, **kwargs))
+
+    def get_league(self, league_id: str) -> ET.Element:
+        return self.request(
+            "RequestGetLeague", "ResponseGetLeague",
+            f"<LeagueId>{b64_encode_text(league_id)}</LeagueId>",
+        )
+
+    def get_league_model(self, league_id: str) -> League:
+        return League.from_response(self.get_league(league_id))
+
+    def get_league_setting(self, league_id: str) -> ET.Element:
+        return self.request(
+            "RequestGetLeagueSetting", "ResponseGetLeagueSetting",
+            f"<LeagueId>{b64_encode_text(league_id)}</LeagueId>",
+        )
+
+    def get_league_description(self, league_id: str) -> str:
+        root = self.request(
+            "RequestGetLeagueDescription", "ResponseGetLeagueDescription",
+            f"<LeagueId>{b64_encode_text(league_id)}</LeagueId>",
+        )
+        value = root.findtext("Description") or ""
+        return b64_decode_text(value) if value else ""
+
+    def get_league_member(self, league_id: str, gamer_id: str) -> ET.Element:
+        return self.request(
+            "RequestGetLeagueMember", "ResponseGetLeagueMember",
+            f"<LeagueId>{b64_encode_text(league_id)}</LeagueId>"
+            f"<GamerId>{b64_encode_text(gamer_id)}</GamerId>",
+        )
+
+    def get_league_members(
+        self, league_id: str, *, size: int = 18, start: int = 0,
+        order: int = 1, descending: bool = True, name: str | None = None,
+    ) -> ET.Element:
+        return self.request(
+            "RequestGetLeagueMembers", "ResponseGetLeagueMembers",
+            f"<Size>{size}</Size><Start>{start}</Start>"
+            f"<LeagueId>{b64_encode_text(league_id)}</LeagueId>"
+            f"<Order>{order}</Order><Descending>{str(descending).lower()}</Descending>"
+            f"<Name>{b64_encode_text(name) if name else ''}</Name>",
+        )
+
+    def get_gamer_permissions(self, gamer_id: str, board_id: str) -> ET.Element:
+        return self.request(
+            "RequestGetGamerPermissions", "ResponseGetGamerPermissions",
+            f"<GamerId>{b64_encode_text(gamer_id)}</GamerId>"
+            f"<BoardId>{b64_encode_text(board_id)}</BoardId>",
+        )
+
+    def get_competitions(
+        self, *, league_id: str | None = None, gamer_id: str | None = None,
+        team_id: str | None = None, name: str | None = None,
+        size: int = 9, start: int = 0, formats: Iterable[int] = (),
+        is_official: Iterable[bool] = (), is_gamer_board_member: Iterable[bool] = (),
+        is_gamer_participant: Iterable[bool] = (), can_gamer_join: Iterable[bool] = (),
+        statuses: Iterable[int] = (), order: int = 1, descending: bool = True,
+        include_gamer_eternal_competitions: bool = False,
+    ) -> ET.Element:
+        def encoded(tag: str, value: str | None) -> str:
+            return f"<{tag}>{b64_encode_text(value) if value else ''}</{tag}>"
+        return self.request(
+            "RequestGetCompetitions", "ResponseGetCompetitions",
+            f"<Size>{size}</Size><Start>{start}</Start>"
+            + encoded("GamerId", gamer_id) + encoded("LeagueId", league_id)
+            + encoded("TeamId", team_id) + encoded("Name", name)
+            + self._xml_scalar_items("Format", "FormatItem", formats)
+            + self._xml_bool_items("IsOfficial", "IsOfficialItem", is_official)
+            + self._xml_bool_items("IsGamerBoardMember", "IsGamerBoardMemberItem", is_gamer_board_member)
+            + self._xml_bool_items("IsGamerParticipant", "IsGamerParticipantItem", is_gamer_participant)
+            + self._xml_bool_items("CanGamerJoin", "CanGamerJoinItem", can_gamer_join)
+            + self._xml_scalar_items("Status", "StatusItem", statuses)
+            + f"<Order>{order}</Order><Descending>{str(descending).lower()}</Descending>"
+            + f"<IncludeGamerEternalCompetitions>{str(include_gamer_eternal_competitions).lower()}</IncludeGamerEternalCompetitions>",
+        )
+
     def get_all_races(self) -> ET.Element:
         return self.request(
             "RequestGetAllRaces",
@@ -460,6 +563,153 @@ class BB3Client:
         )
 
     # ---------- Competitions ----------
+
+    def create_competition(
+        self, name: str, league_id: str, *, format: int,
+        participants_number_max: int, timer_id: int, admission_mode: int,
+        logo_id: str | None = None, password: str | None = None,
+    ) -> ET.Element:
+        return self.request(
+            "RequestCreateCompetition", "ResponseCreateCompetition",
+            f"<Name>{b64_encode_text(name)}</Name><Format>{int(format)}</Format>"
+            f"<LeagueId>{b64_encode_text(league_id)}</LeagueId>"
+            f"<LogoId>{b64_encode_text(logo_id) if logo_id else ''}</LogoId>"
+            f"<ParticipantsNumberMax>{participants_number_max}</ParticipantsNumberMax>"
+            f"<TimerId>{int(timer_id)}</TimerId><AdmissionMode>{int(admission_mode)}</AdmissionMode>"
+            f"<HasPassword>{str(password is not None).lower()}</HasPassword>"
+            f"<Password>{b64_encode_text(password) if password is not None else ''}</Password>",
+        )
+
+    def create_competition_model(self, name: str, league_id: str, **kwargs) -> Competition:
+        return Competition.from_response(self.create_competition(name, league_id, **kwargs))
+
+    def get_admission_modes(self) -> ET.Element:
+        return self.request("RequestGetAdmissionModes", "ResponseGetAdmissionModes")
+
+    def get_competition_teams_numbers(self, format: int) -> ET.Element:
+        return self.request(
+            "RequestGetCompetitionTeamsNumbers", "ResponseGetCompetitionTeamsNumbers",
+            f"<Format>{int(format)}</Format>",
+        )
+
+    def get_competition_contest_formats(self, competition_format: int) -> ET.Element:
+        return self.request(
+            "RequestGetCompetitionContestFormats", "ResponseGetCompetitionContestFormats",
+            f"<CompetitionFormat>{int(competition_format)}</CompetitionFormat>",
+        )
+
+    def get_competition_team_value_extremums(self) -> ET.Element:
+        return self.request("RequestGetCompetitionTeamValueExtremums", "ResponseGetCompetitionTeamValueExtremums")
+
+    def get_redraft_settings_possible_values(self) -> ET.Element:
+        return self.request("RequestGetRedraftSettingsPossibleValues", "ResponseGetRedraftSettingsPossibleValues")
+
+    def get_all_pitches(self, *, size: int = 12, start: int = 0) -> ET.Element:
+        return self.request(
+            "RequestGetAllPitches", "ResponseGetAllPitches",
+            f"<Size>{size}</Size><Start>{start}</Start>",
+        )
+
+    def get_competition_description(self, competition_id: str) -> str:
+        root = self.request(
+            "RequestGetCompetitionDescription", "ResponseGetCompetitionDescription",
+            f"<IdCompetition>{b64_encode_text(competition_id)}</IdCompetition>",
+        )
+        value = root.findtext("Value") or ""
+        return b64_decode_text(value) if value else ""
+
+    def set_competition_description(self, competition_id: str, description: str) -> ET.Element:
+        # The official client uses the unusual lower-case c in Idcompetition.
+        return self.request(
+            "RequestSetCompetitionDescription", "ResponseSetCompetitionDescription",
+            f"<Idcompetition>{b64_encode_text(competition_id)}</Idcompetition>"
+            f"<Description>{b64_encode_text(description)}</Description>",
+        )
+
+    def get_competition_days_number(self, competition_id: str) -> int:
+        root = self.request(
+            "RequestGetCompetitionDaysNumber", "ResponseGetCompetitionDaysNumber",
+            f"<IdCompetition>{b64_encode_text(competition_id)}</IdCompetition>",
+        )
+        value = root.findtext("Value")
+        if value is None:
+            raise BB3RequestError("ResponseGetCompetitionDaysNumber contained no Value")
+        return int(value)
+
+    def get_competition_participants_number(self, competition_id: str) -> ET.Element:
+        return self.request(
+            "RequestGetCompetitionParticipantsNumber", "ResponseGetCompetitionParticipantsNumber",
+            f"<IdCompetition>{b64_encode_text(competition_id)}</IdCompetition>",
+        )
+
+    def get_competition_participants(
+        self, competition_id: str, *, size: int = 0, start: int = 0,
+    ) -> ET.Element:
+        return self.request(
+            "RequestGetCompetitionParticipants", "ResponseGetCompetitionParticipants",
+            f"<Size>{size}</Size><Start>{start}</Start>"
+            f"<CompetitionId>{b64_encode_text(competition_id)}</CompetitionId>",
+        )
+
+    def get_competition_password(self, setting_id: str) -> str:
+        root = self.request(
+            "RequestGetPassword", "ResponseGetPassword",
+            f"<SettingId>{b64_encode_text(setting_id)}</SettingId>",
+        )
+        value = root.findtext("Password") or ""
+        return b64_decode_text(value) if value else ""
+
+    def _set_competition_setting(self, request_name: str, response_name: str,
+                                 setting_id: str, field: str, value: object) -> ET.Element:
+        if isinstance(value, bool):
+            text = str(value).lower()
+        else:
+            text = str(value)
+        return self.request(
+            request_name, response_name,
+            f"<SettingId>{b64_encode_text(setting_id)}</SettingId><{field}>{text}</{field}>",
+        )
+
+    def set_competition_participants_number_max(self, setting_id: str, value: int) -> ET.Element:
+        return self._set_competition_setting("RequestSetCompetitionParticipantsNumberMax", "ResponseSetCompetitionParticipantsNumberMax", setting_id, "Value", value)
+
+    def set_allow_experienced_teams(self, setting_id: str, allow: bool) -> ET.Element:
+        return self._set_competition_setting("RequestSetAllowExperiencedTeams", "ResponseSetAllowExperiencedTeams", setting_id, "AllowExperiencedTeams", allow)
+
+    def set_automatic_match_validation(self, setting_id: str, automatic: bool) -> ET.Element:
+        return self._set_competition_setting("RequestSetAutomaticMatchValidation", "ResponseSetAutomaticMatchValidation", setting_id, "AutomaticMatchValidation", automatic)
+
+    def set_allow_custom_teams(self, setting_id: str, allow: bool) -> ET.Element:
+        return self._set_competition_setting("RequestSetAllowCustomTeams", "ResponseSetCompetitionSetting", setting_id, "AllowCustomTeams", allow)
+
+    def set_enable_match_consequences(self, setting_id: str, enable: bool) -> ET.Element:
+        return self._set_competition_setting("RequestSetEnableMatchConsequences", "ResponseSetCompetitionSetting", setting_id, "EnableMatchConsequences", enable)
+
+    def set_forced_pitch(self, setting_id: str, pitch_id: str) -> ET.Element:
+        return self._set_competition_setting("RequestSetForcedPitch", "ResponseSetForcedPitch", setting_id, "ForcedPitchId", b64_encode_text(pitch_id))
+
+    def set_banned_pitches(self, setting_id: str, pitch_ids: Iterable[str]) -> ET.Element:
+        return self.request(
+            "RequestSetBannedPitches", "ResponseSetBannedPitches",
+            f"<SettingId>{b64_encode_text(setting_id)}</SettingId>"
+            + self._xml_b64_items("BannedPitches", "BannedPitchesItem", pitch_ids),
+        )
+
+    def set_tv_range_min(self, setting_id: str, value: int | None) -> ET.Element:
+        return self.request(
+            "RequestSetTvRangeMin", "ResponseSetTvRangeMin",
+            f"<SettingId>{b64_encode_text(setting_id)}</SettingId>"
+            f"<TvRangeMin>{value if value is not None else 0}</TvRangeMin>"
+            f"<SetNoLimit>{str(value is None).lower()}</SetNoLimit>",
+        )
+
+    def set_tv_range_max(self, setting_id: str, value: int | None) -> ET.Element:
+        return self.request(
+            "RequestSetTvRangeMax", "ResponseSetTvRangeMax",
+            f"<SettingId>{b64_encode_text(setting_id)}</SettingId>"
+            f"<TvRangeMax>{value if value is not None else 0}</TvRangeMax>"
+            f"<SetNoLimit>{str(value is None).lower()}</SetNoLimit>",
+        )
 
     def get_competition(self, competition_id: str) -> ET.Element:
         return self.request(

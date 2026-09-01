@@ -19,6 +19,8 @@ Capture-verified or end-to-end verified:
 - dynamic Cyanide backend discovery
 - replay download/decode
 - team creation, listing and roster retrieval
+- league creation, lookup, members and permissions
+- competition creation, discovery, participants and captured admin settings
 - player hire/fire/rename
 - player advancement: options, random/chosen skill and characteristic roll/choice
 - team deletion protocol
@@ -72,6 +74,31 @@ raw Steam ticket bytes
 
 Do not hardcode the application server. `BB3Client` uses the Cyanide bootstrap
 service and connects to the returned `tcp://host:port`.
+
+## Leagues and competitions
+
+The 2026-09-01 capture added verified league creation/lookup and competition
+administration. Destructive mutations are explicit client calls:
+
+```python
+from bb3 import AdmissionMode, BB3Client, CompetitionFormat, TimerId
+
+league = client.create_league_model("My league", logo_id=logo_id)
+competition = client.create_competition_model(
+    "Autumn Wissen",
+    league.league_id,
+    format=CompetitionFormat.WISSEN,
+    participants_number_max=16,
+    timer_id=TimerId.UNLIMITED,
+    admission_mode=AdmissionMode.TICKETS,
+)
+
+client.set_allow_experienced_teams(competition.setting_id, True)
+client.set_enable_match_consequences(competition.setting_id, True)
+```
+
+See [`docs/ENUMS.md`](docs/ENUMS.md) for verified numeric meanings and values
+that deliberately remain unnamed.
 
 ## Team roster
 
@@ -155,5 +182,5 @@ ReplayData -> Base64 -> Base64 -> zlib -> XML
 
 ## Next protocol targets
 
-The highest-priority remaining captures are `GetGames` and `GetGameResult`, then
-structured `MatchResult`, redraft and journeymen.
+The highest-priority remaining captures are redraft and journeymen, followed by
+labels for unresolved competition status, contest-format and timer values.

@@ -167,13 +167,22 @@ Implemented and capture-verified:
 - gamer registered teams
 - gamer ban duration
 - competition menu/formats
+- league creation/get/settings/description/member listing and permissions
+- competition creation and filtered competition listing
+- admission modes, team-count choices, contest-format choices, pitch listing,
+  team-value extrema and redraft possible values
+- description/day-count/participant/password reads
+- participant limit, experienced/custom teams, automatic validation, match
+  consequences, forced/banned pitch and TV range mutations
+- verified enum mappings for competition format, admission mode, selected timer
+  IDs, created status, league roles and board permissions
 
 This is backend-only league/competition data and is now higher priority than
 generic match search supplied by external APIs.
 
 Remaining:
-- verify numeric enum meanings (`Format`, `ContestFormat`, `AdmissionMode`,
-  schedule/match `Status`, ranking ordering)
+- verify unresolved numeric enum meanings (`ContestFormat`, additional timer and
+  competition/schedule/match `Status` values, ranking ordering)
 - add representative sanitized fixtures for ranking/next-match edge cases
 - decide which raw competition-menu fields merit semantic models
 
