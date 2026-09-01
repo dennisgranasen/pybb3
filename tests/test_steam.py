@@ -54,11 +54,24 @@ def test_secure_password_prompt_fallback(monkeypatch, tmp_path):
     def fake_run(command, **kwargs):
         seen.update(kwargs["env"])
         payload = {"username": "u", "refreshToken": "r", "guardData": None}
-        return type("Result", (), {"stdout": json.dumps(payload)})()
+        return type("Result", (), {"stdout": json.dumps(payload), "stderr": "",
+                                    "returncode": 0})()
 
     monkeypatch.setattr("bb3.steam.subprocess.run", fake_run)
     auth._bootstrap("u", None)
     assert seen["STEAM_PASSWORD"] == "prompt-secret"
+
+
+def test_bootstrap_accepts_json_after_dotnet_build_output(monkeypatch, tmp_path):
+    payload = {"username": "u", "refreshToken": "r", "guardData": None}
+
+    def fake_run(*args, **kwargs):
+        return type("Result", (), {"stdout": f"Build succeeded.\n{json.dumps(payload)}\n",
+                                    "stderr": "", "returncode": 0})()
+
+    monkeypatch.setattr("bb3.steam.subprocess.run", fake_run)
+    auth = SteamAuthProcess("helper", cache_path=tmp_path / "cache", environ={})
+    assert auth._bootstrap("u", "secret").refresh_token == "r"
 
 
 def test_helper_process_cleanup(monkeypatch, tmp_path):
@@ -83,6 +96,26 @@ def test_helper_process_cleanup(monkeypatch, tmp_path):
     auth.close()
     assert process.stdin.getvalue() == "\n"
     assert auth.process is None
+
+
+def test_ticket_accepts_json_after_dotnet_build_output(monkeypatch, tmp_path):
+    cache = tmp_path / "cache"
+    cache.write_text(json.dumps({"username": "u", "refreshToken": "r"}),
+                     encoding="utf-8")
+
+    class Process:
+        stdout = io.StringIO('Build succeeded.\n{"steamId":"1","authToken":"token"}\n')
+        stdin = io.StringIO()
+        returncode = None
+
+        def poll(self): return None
+        def wait(self, timeout=None): self.returncode = 0
+        def kill(self): self.returncode = -9
+
+    monkeypatch.setattr("bb3.steam.subprocess.Popen", lambda *a, **k: Process())
+    auth = SteamAuthProcess("helper", cache_path=cache,
+                            environ={"STEAM_USERNAME": "u"})
+    assert auth.start().steam_id == "1"
 
 
 def test_secret_objects_have_redacted_repr():

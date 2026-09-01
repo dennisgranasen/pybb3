@@ -99,8 +99,21 @@ class SteamAuthProcess:
         child_env = dict(self.environ)
         child_env.update(STEAM_USERNAME=username, STEAM_PASSWORD=password)
         result = subprocess.run([*self.command, "bootstrap"], env=child_env,
-                                stdout=subprocess.PIPE, text=True, check=True)
-        data = json.loads(result.stdout)
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True)
+        if result.returncode:
+            detail = result.stderr.strip() or result.stdout.strip() or "no diagnostic output"
+            raise RuntimeError("Steam helper bootstrap failed "
+                               f"(exit code {result.returncode}): {detail}")
+        try:
+            data = next(
+                json.loads(line)
+                for line in reversed(result.stdout.splitlines())
+                if line.lstrip().startswith("{")
+            )
+        except (StopIteration, json.JSONDecodeError) as error:
+            detail = result.stderr.strip() or result.stdout.strip() or "no output"
+            raise RuntimeError(f"Steam helper bootstrap returned invalid JSON: {detail}") from error
         state = SteamAuthState(str(data["username"]), str(data["refreshToken"]),
                                data.get("guardData"))
         self._write_state(state)
@@ -124,12 +137,17 @@ class SteamAuthProcess:
                 env=child_env, text=True, bufsize=1)
             if self.process.stdout is None:
                 raise RuntimeError("Steam helper stdout is unavailable")
-            line = self.process.stdout.readline()
-            if not line:
-                self.process.wait()
-                raise RuntimeError("Steam helper exited before returning a ticket "
-                                   f"(exit code {self.process.returncode})")
-            data = json.loads(line)
+            while True:
+                line = self.process.stdout.readline()
+                if not line:
+                    self.process.wait()
+                    raise RuntimeError("Steam helper exited before returning a ticket "
+                                       f"(exit code {self.process.returncode})")
+                try:
+                    data = json.loads(line)
+                    break
+                except json.JSONDecodeError:
+                    continue
             self.ticket = SteamTicket(str(data["steamId"]), str(data["authToken"]))
             return self.ticket
         except Exception:

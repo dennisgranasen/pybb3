@@ -20,6 +20,8 @@ class BB3Frame:
 
 
 def recv_exact(sock: socket.socket, size: int) -> bytes:
+    if size < 0:
+        raise ValueError("size must be non-negative")
     chunks = bytearray()
     while len(chunks) < size:
         chunk = sock.recv(size - len(chunks))
@@ -47,15 +49,29 @@ def recv_frame(sock: socket.socket) -> BB3Frame:
     if data_el is None:
         raise BB3ProtocolError("BB3 header has no Data element")
 
-    body_size = int(data_el.attrib.get("size", "0"))
-    body = recv_exact(sock, body_size).decode("utf-8", errors="replace")
+    try:
+        body_size = int(data_el.attrib["size"])
+        message_token = int(data_el.attrib["MessageToken"])
+    except (KeyError, ValueError) as exc:
+        raise BB3ProtocolError("BB3 header has invalid size or MessageToken") from exc
+    if body_size < 0:
+        raise BB3ProtocolError(f"Invalid BB3 body length: {body_size}")
+    zipped = data_el.attrib.get("zipped")
+    if zipped not in (None, "false", "no"):
+        raise BB3ProtocolError(f"Unsupported BB3 frame compression: {zipped!r}")
+
+    body_bytes = recv_exact(sock, body_size)
+    try:
+        body = body_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise BB3ProtocolError("BB3 frame body is not valid UTF-8") from exc
 
     return BB3Frame(
         message_name=data_el.attrib.get("MessageName", ""),
-        message_token=int(data_el.attrib.get("MessageToken", "0")),
+        message_token=message_token,
         body=body,
         data_type=data_el.attrib.get("type"),
-        zipped=data_el.attrib.get("zipped"),
+        zipped=zipped,
     )
 
 

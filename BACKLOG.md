@@ -2,225 +2,1546 @@
 
 This document tracks reverse-engineering and implementation work for `pybb3`.
 
-Status: `DONE`, `PARTIAL`, `TODO`, `RESEARCH`, `BLOCKED`.
-Priority: `P0` core, `P1` important, `P2` useful, `P3` optional.
+The goal is to build a headless Python client/SDK for Blood Bowl 3 that can authenticate through Steam, communicate with the Cyanide backend, manage teams, retrieve match data, and expose stable higher-level APIs.
+
+## Status legend
+
+* `DONE` — implemented and verified against the live BB3 backend
+* `PARTIAL` — implemented but incomplete or not fully verified
+* `TODO` — known work item
+* `RESEARCH` — protocol behavior still needs reverse engineering
+* `BLOCKED` — cannot proceed until additional protocol/data is captured
+
+Priority:
+
+* `P0` — required for core functionality
+* `P1` — important
+* `P2` — useful
+* `P3` — optional / polish
+
+---
 
 # 1. Authentication and connection
 
 ## DONE — Steam authentication
-SteamKit2 helper, AppID `1016950`, ticket -> uppercase HEX ASCII -> Base64,
-Windows/Linux verified. Never log passwords, refresh tokens, tickets or BB3
-AuthTokens.
+
+Priority: `P0`
+
+Implemented:
+
+* SteamKit2 helper
+* Steam login
+* Steam auth session ticket for BB3 AppID `1016950`
+* conversion of Steam ticket to BB3 `AuthToken`
+* Python client can launch the Steam helper automatically
+* verified on Windows
+* verified on Linux
+
+BB3 token transformation:
+
+```text
+raw Steam auth-session-ticket bytes
+→ uppercase HEX
+→ ASCII bytes
+→ Base64
+```
+
+Requirements:
+
+* never log Steam passwords
+* never log Steam refresh tokens
+* never log Steam auth tickets
+* never log BB3 AuthTokens
+
+---
 
 ## DONE — Environment configuration
-Environment -> `.env` -> interactive prompt. `STEAM_USERNAME` is the login
-name. Password should normally be prompted securely rather than persisted.
 
-## DONE — Dynamic backend discovery
-Use the bootstrap-returned `tcp://host:port`; never hardcode app servers.
+Priority: `P0`
 
-## PARTIAL — Session lifecycle
-Still research explicit logout (if any), abandoned-session timeout and immediate
-relogin after a clean close.
+Expected configuration:
+
+```dotenv
+STEAM_USERNAME=
+# STEAM_PASSWORD=
+
+BB3_PATH=
+
+# Optional overrides:
+# BB3_RULES_ENGINE_ZIP=
+# BB3_DATA_ZIP=
+```
+
+Expected behavior:
+
+1. operating-system environment variables
+2. `.env`
+3. interactive prompt
+
+`STEAM_USERNAME` is the Steam login name, not SteamID64.
+
+Password must use a secure prompt when not supplied.
+
+---
+
+## DONE — Dynamic BB3 backend discovery
+
+Priority: `P0`
+
+Do not hardcode the BB3 application server.
+
+Known bootstrap flow:
+
+```text
+GET http://bootstrap6-bb3.cyanide-studio.com:28006/lobby/{client_version}
+
+→ tcp://host:port
+```
+
+The returned host/port must be used for the TCP connection.
+
+---
+
+## PARTIAL — Improve session lifecycle
+
+Priority: `P1`
+
+Observed server error:
+
+```text
+Code 11
+This account is already logged in
+```
+
+Tasks:
+
+* determine whether BB3 has an explicit logout request
+* identify any logout/disconnect message used by the official client
+* ensure TCP sockets always close on normal exit
+* ensure sockets close on exceptions
+* ensure Steam helper process terminates correctly
+* test interrupted/debugger-aborted sessions
+* determine server timeout for abandoned sessions
+
+Implemented locally:
+
+* socket ownership is cleared before shutdown, making repeated close safe
+* TCP shutdown and close occur before Steam-helper cleanup
+* helper cleanup still runs if socket close fails
+* context-entry failure and repeated-close behavior have offline tests
+
+Still requires live protocol data:
+
+* explicit logout request, if one exists
+* abandoned-session timeout
+* immediate relogin verification after clean shutdown
+
+Acceptance criteria:
+
+* normal `with BB3Client...` exit does not leave an active BB3 account session
+* helper process does not remain orphaned
+* login immediately after a clean previous session succeeds
+
+---
 
 # 2. Protocol core
 
-## DONE — Framing, token handling and startup
-Framing, separate transport/body counters, keepalive behavior and initial
-status/config/login sequence are implemented.
+## DONE — BB3 framing
+
+Priority: `P0`
+
+Known frame format:
+
+```text
+uint32 little-endian header_length
+<header XML: header_length bytes>
+<body: Data.size bytes>
+repeat
+```
+
+Header contains fields such as:
+
+```xml
+<Header>
+  <Data
+    type="textxml"
+    size="..."
+    zipped="false"
+    MessageName="..."
+    MessageToken="..."
+    sizeBeforeCompression="..."
+  />
+</Header>
+```
+
+---
+
+## DONE — Message token handling
+
+Priority: `P0`
+
+Important distinction:
+
+```text
+Header MessageToken
+!=
+Body <Token>
+```
+
+Known behavior:
+
+* header `MessageToken` is transport/request correlation
+* body `<Token>` is application request sequence
+* keepalive messages consume transport tokens
+
+Do not merge these counters.
+
+---
+
+## DONE — Initial connection sequence
+
+Priority: `P0`
+
+Observed startup sequence includes:
+
+```text
+NotificationKeepAlive
+KeepAliveAdvice
+RequestGetServerStatus
+RequestGetGamerConfig
+RequestLogin
+```
+
+---
 
 ## DONE — Structured server exceptions
-Successful responses do not universally contain `<Result>`. Direct
-`<Exception>` and wrapped `<Exceptions>` are supported; `Result=0` is failure.
+
+Priority: `P1`
+
+Current error handling should expose structured exception data.
+
+Desired API:
+
+```python
+try:
+    ...
+except BB3RequestError as exc:
+    print(exc.code)
+    print(exc.description)
+    print(exc.message_name)
+```
+
+Requirements:
+
+* decode Base64 `<Exception><Desc>`
+* expose numeric exception code
+* preserve raw response for diagnostics
+* support both `<Exception>` and `<Exceptions>`
+* do not assume every successful response contains `<Result>`
+
+Implemented:
+
+* `BB3RequestError` exposes `code`, `description`, `message_name`,
+  `raw_response`, and the original response `frame`
+* both direct `<Exception>` and wrapped `<Exceptions>` responses are handled
+* failure descriptions are Base64-decoded when possible
+* `request()` consistently returns a validated XML root
+* `request_frame()` preserves low-level raw frame access
+* automatically formatted error messages redact labelled secrets
+
+Known successful response example:
+
+```xml
+<ResponseCreateTeam>
+  <Exceptions/>
+  <Token>4</Token>
+  <IdTeam>...</IdTeam>
+  <ShouldCache>0</ShouldCache>
+</ResponseCreateTeam>
+```
+
+There is no `<Result>` field in this response.
+
+Acceptance criteria:
+
+* `ResponseCreateTeam` is treated as successful
+* `ResponseLogin Result=0` raises a structured error
+* error description is decoded automatically
+
+---
 
 # 3. Team management
 
 ## DONE — Create team
-Verified live on Windows and Linux.
 
-## PARTIAL — Get team / roster
 Priority: `P0`
 
-Protocol is now **VERIFIED**. `RequestGetTeamRoster` uses `<IdTeam>`, not
-`<TeamId>`. A complete real response has been captured.
+Verified against live BB3 backend on:
 
-Implemented in this update:
-- corrected request field
-- structured parser that keeps `RaceRoster` templates separate from actual
-  `TeamRoster` players
-- player IDs/names/position/skills/SPP/level-up status/current characteristics
-- roster-position cost/max/base skills/base characteristics/skill categories
-- rosterized inducements
-- raw XML preserved alongside semantic models
+* Windows
+* Linux
 
-Remaining:
-- map runtime casualty IDs to static casualty rules
-- verify every currently unmodeled roster field
-- verify exact meaning of outer `TeamRosterSlot/Number` vs inner `Player/Number`
-- add treasury/improvement state once its canonical source in the team responses
-  is pinned down
-
-## DONE — Hire / rename / fire player
-Known requests implemented.
-
-## RESEARCH — Temporary retirement
-Verify live semantics of `TemporarilyRetire=true`.
-
-## PARTIAL — Delete team
-Priority: `P1`
-
-Protocol is now **VERIFIED**:
+Known request:
 
 ```xml
-<RequestDeleteTeam><IdTeam>BASE64(team UUID)</IdTeam></RequestDeleteTeam>
+<RequestCreateTeam>
+  <Token>...</Token>
+  <ShouldCache>false</ShouldCache>
+  <Name>BASE64(team name)</Name>
+  <Race>...</Race>
+  <Motto>...</Motto>
+  <IsCustom>false</IsCustom>
+  <TeamRecruitmentId/>
+  <ChosenSpecialRule/>
+</RequestCreateTeam>
 ```
 
-Implementation is included in this update. Live destructive tests must remain
-explicit opt-in.
+Successful response contains:
+
+```xml
+<IdTeam>BASE64(team UUID)</IdTeam>
+```
+
+`create_team()` must return the decoded team UUID.
+
+---
+
+## BLOCKED — Get team / roster
+
+Priority: `P0`
+
+Reverse engineer and implement the response for retrieving the full current team roster.
+
+Current blocker:
+
+* the repository has no captured or sanitized `ResponseGetTeamRoster` body
+* field names and nesting cannot be implemented without inventing protocol data
+
+Required next input:
+
+* one sanitized successful roster response, preferably for a team containing
+  players, skills, an injury, and team improvements
+
+Primary target:
+
+```text
+ResponseGetTeamRoster
+```
+
+Need to expose:
+
+* team UUID
+* team name
+* race
+* treasury
+* dedicated fans
+* rerolls
+* apothecary
+* assistant coaches
+* cheerleaders
+* players
+* player UUIDs
+* player names
+* position IDs
+* skills
+* SPP
+* injuries
+* MNG
+* temporary retirement state
+* current team value
+* inducement-related state if present
+
+Acceptance criteria:
+
+```python
+team = client.get_team(team_id)
+
+print(team.name)
+print(team.players)
+```
+
+should return structured Python models rather than raw XML.
+
+---
+
+## DONE — Hire player from position
+
+Priority: `P1`
+
+Known request:
+
+```xml
+<RequestHirePlayerFromPosition>
+  <Token>...</Token>
+  <ShouldCache>false</ShouldCache>
+  <TeamId>BASE64(team UUID)</TeamId>
+  <Position>POSITION_ID</Position>
+</RequestHirePlayerFromPosition>
+```
+
+Response returns a player UUID.
+
+Verify against live backend if not already covered by integration tests.
+
+---
+
+## DONE — Rename player
+
+Priority: `P1`
+
+Known request:
+
+```text
+RequestSetPlayerName
+```
+
+Fields:
+
+* player ID
+* Base64 name
+
+---
+
+## DONE — Fire player
+
+Priority: `P1`
+
+Known request:
+
+```xml
+<RequestFirePlayers>
+  <IdTeam>...</IdTeam>
+  <IdPlayers/>
+  <PlayerFireInfos>
+    <PlayerFireInfosItem>
+      <PlayerId>...</PlayerId>
+      <TemporarilyRetire>false</TemporarilyRetire>
+    </PlayerFireInfosItem>
+  </PlayerFireInfos>
+</RequestFirePlayers>
+```
+
+`Result=1` has been observed.
+
+---
+
+## RESEARCH — Temporary retirement
+
+Priority: `P2`
+
+The current static rules data exposes temporary-retirement semantics for injuries.
+
+Need to determine live API behavior for:
+
+```xml
+<TemporarilyRetire>true</TemporarilyRetire>
+```
+
+Tasks:
+
+* determine which casualties permit retirement
+* verify server validation
+* determine how retired players appear in team responses
+* determine reactivation/healing behavior
+
+---
+
+## TODO — Delete team
+
+Priority: `P1`
+
+A delete-team request is known to exist but the request body is not yet confirmed.
+
+Current client behavior should remain:
+
+```python
+raise NotImplementedError
+```
+
+until protocol semantics are verified.
+
+Tasks:
+
+* capture official client deleting a test team
+* identify exact request message name
+* identify request body
+* identify success response
+* implement
+* add explicit safety guard for destructive operation
+
+Acceptance criteria:
+
+```python
+client.delete_team(team_id)
+```
+
+works only when the exact protocol has been verified.
+
+---
 
 ## DONE — Team improvements
-Signed `Quantity` delta, IDs 1-5 confirmed in modern static rules.
 
-## PARTIAL — Team listing
-`RequestGetTeamsOfGamer -> ResponseGetTeams` and
-`RequestGetTeamsCompetitions -> ResponseGetTeamsCompetitions` are capture
-verified and thin client methods are included. Structured team-list models can
-follow after representative sanitized fixtures are added.
+Priority: `P1`
+
+Known request:
+
+```xml
+<RequestUpdateTeamImprovements>
+  <TeamId>...</TeamId>
+  <Improvements>
+    <ImprovementsItem>
+      <ImprovementId>...</ImprovementId>
+      <Quantity>...</Quantity>
+    </ImprovementsItem>
+  </Improvements>
+</RequestUpdateTeamImprovements>
+```
+
+`Quantity` is a signed delta.
+
+Known improvement IDs `1–5` have been confirmed from modern BB3 rules data.
+
+---
+
+## DONE — Team name and motto setters
+
+Priority: `P2`
+
+Known messages:
+
+```text
+RequestSetTeamName
+RequestSetTeamMotto
+```
+
+---
 
 # 4. Player advancement
 
-## PARTIAL — Player level-ups
+## RESEARCH — Player level-ups
+
 Priority: `P0`
 
-The normal advancement protocol is now sufficiently captured for implementation.
+Need to reverse engineer:
 
-### VERIFIED
-- `RequestGetPlayerImprovements`
-- server-provided SPP costs / team values / availability / choosability
-- `RequestAddPlayerRandomSkill`
-- random response returns actual `Skill` ID and `HasLeft`
-- `RequestAddPlayerSkill` for chosen primary
-- the same `RequestAddPlayerSkill` for chosen secondary
-- `RequestBeginIncreasePlayerCharacteristic`
-- server-side characteristic roll and returned available characteristic list
-- `CanTakeSecondarySkill`
-- `RequestChooseIncreasePlayerCharacteristic`
+* available improvement choices
+* characteristic increases
+* selected primary skills
+* selected secondary skills
+* random primary skills
+* random secondary skills
+* SPP costs
+* server-side validation
+* skill duplication rules
+* characteristic maximums
+* increase/reduction interactions
 
-Important semantics:
-- never hardcode SPP costs; current costs come from the server
-- `IdPlayer` is used by skill endpoints
-- `PlayerId` is used by characteristic begin/choose endpoints
-- normal characteristic availability is determined by the roll
-- custom teams may expose all characteristics; do not use that capture as
-  ordinary advancement behavior
+Tasks:
 
-Implemented in this update:
-- read-only improvement model
-- chosen/random skill methods
-- characteristic begin/choose methods
-- `CharacteristicRoll`/`CharacteristicUpgrade` models
-- fixture-based tests
+1. capture player advancement flow
+2. identify request messages
+3. map skill IDs to `BB3Rules`
+4. model advancement state
+5. expose high-level API
 
-Remaining edge-case research:
-- a normal-team capture with `CanTakeSecondarySkill=1`
-- duplicate-skill rejection behavior
-- characteristic maximum/invalid-choice errors
-- explicit live destructive tests behind opt-in flags
+Desired API:
+
+```python
+choices = client.get_player_advancement_options(player_id)
+
+client.apply_player_advancement(
+    player_id,
+    ...
+)
+```
+
+---
 
 # 5. Match and game discovery
 
 ## TODO — GetGames
+
 Priority: `P0`
-This is now the highest-value protocol capture target.
+
+Implement retrieval of games associated with the authenticated account/team.
+
+Need to determine:
+
+* pagination
+* active games
+* finished games
+* competition IDs
+* team IDs
+* opponent IDs
+* timestamps
+* game result references
+
+---
 
 ## TODO — GetGameResult
+
 Priority: `P0`
+
+Implement structured match-result retrieval.
 
 Desired flow:
-`GetGames -> GetGameResult -> DownloadReplay`.
+
+```text
+GetGames
+→ GetGameResult
+→ DownloadReplay
+```
+
+This should allow pybb3 to discover games automatically rather than requiring a manually supplied game UUID.
+
+---
 
 ## DONE — Replay download
-Double Base64 + zlib decode is implemented.
 
-## TODO — Structured MatchResult
 Priority: `P0`
-Canonical semantic result: teams, coaches, score, TDs, casualties, winnings,
-SPP/MVP/player results, competition/timestamps/status/concession/disconnect.
+
+Known request:
+
+```xml
+<RequestDownloadReplay>
+  <Token>...</Token>
+  <ShouldCache>false</ShouldCache>
+  <GameId>BASE64(game UUID)</GameId>
+</RequestDownloadReplay>
+```
+
+Replay payload decoding:
+
+```text
+Base64
+→ Base64
+→ zlib
+→ Replay XML
+```
+
+---
+
+## TODO — Structured MatchResult models
+
+Priority: `P0`
+
+MatchResult should be treated as the canonical semantic match result.
+
+Need structured models for:
+
+* teams
+* coaches
+* score
+* touchdowns
+* casualties
+* winnings
+* SPP
+* MVP
+* player results
+* competition
+* timestamps
+* match status
+* concession
+* disconnect
+* redraft-related state if present
+
+Avoid requiring consumers to parse raw XML.
+
+---
 
 ## TODO — Replay semantic event API
+
 Priority: `P1`
+
+Replay XML contains semantic events such as:
+
+```text
+Event*
+ReplayStep
+BoardState
+InitialBoardState
+```
+
+Desired API:
+
+```python
+replay.events
+replay.match_result
+replay.initial_state
+```
+
+Prefer semantic events for analysis.
+
+Do not expand every BoardState into large application-domain models unless necessary.
+
+---
 
 # 6. Formations
 
-Retrieve/save/remove are implemented. Player-number semantics and update-vs-
-create behavior remain research items.
+## DONE — Retrieve formations
+
+Priority: `P2`
+
+Known message:
+
+```text
+RequestGetTeamFormations
+```
+
+---
+
+## DONE — Save formation
+
+Priority: `P2`
+
+Known request:
+
+```xml
+<RequestSaveFormation>
+  <Formation>
+    <Id/>
+    <TeamId>...</TeamId>
+    <Name>BASE64(name)</Name>
+    <Data>BASE64(JSON)</Data>
+    <Type>0</Type>
+  </Formation>
+</RequestSaveFormation>
+```
+
+Known `Data` example:
+
+```json
+{
+  "pitchMap": {
+    "(X=7,Y=0)": {
+      "number": 1
+    }
+  }
+}
+```
+
+Known formation types:
+
+```text
+0 = Defensive
+1 = Offensive
+```
+
+---
+
+## RESEARCH — Formation player-number semantics
+
+Priority: `P2`
+
+The `number` field likely maps to player roster number.
+
+Verify this explicitly.
+
+Also verify whether supplying an existing Formation `Id` updates an existing formation.
+
+---
+
+## DONE — Remove formation
+
+Priority: `P2`
+
+Known message:
+
+```text
+RequestRemoveFormations
+```
+
+---
 
 # 7. Team customization / cosmetics
 
-Setters are largely verified. Collection `Item.Id` vs `Instance.Id` semantics
-and logo/emblem remain research items.
+## PARTIAL — Cosmetic setters
 
-# 8. Static rules/data
+Priority: `P2`
 
-Modern `bb3rulesengine.zip/Datas/BB3Rules.json` is authoritative. Do not merge
-legacy `Rules.json` destructively.
+Known collection tags and setters:
 
-Typed `PositionRule`, `RaceRule`, `SkillRule` and `TeamImprovementRule` already
-exist. `BB3Rules.skill_by_code()` should be used to map advancement `Skill` IDs
-instead of maintaining a duplicate hardcoded map.
+```text
+TeamCustoJerseyPattern   → RequestSetTeamJerseyPattern
+
+TeamCustoColor           → RequestSetTeamPrimaryColor
+                         → RequestSetTeamSecondaryColor
+                         → RequestSetTeamTertiaryColor
+
+TeamCustoCheerleader     → RequestSetTeamCheerleader
+TeamCustoCoach           → RequestSetTeamCoach
+TeamCustoPitch           → RequestSetTeamPitch
+TeamCustoStadium         → RequestSetTeamStadium
+TeamCustoCoachZone       → RequestSetTeamCoachZone
+TeamCustoStaffZone       → RequestSetTeamStaffZone
+TeamCustoCheerleaderZone → RequestSetTeamCheerleaderZone
+TeamCustoDice            → RequestSetTeamDice
+TeamCustoBall            → RequestSetTeamBall
+```
+
+---
+
+## RESEARCH — Collection item ID semantics
+
+Priority: `P1`
+
+Determine exact difference between:
+
+```text
+CollectionItem.Id
+CollectionItemInstance.Id
+```
+
+Need to know which one each setter expects.
+
+Tasks:
+
+* capture complete `ResponseCollectionItems`
+* correlate collection entries with setter requests
+* correlate backend UUIDs with static asset/content IDs
+* inspect whether account ownership is represented through instances
+
+---
+
+## RESEARCH — Team logo/emblem
+
+Priority: `P2`
+
+Need to identify:
+
+* collection tag
+* getter
+* setter
+* ID semantics
+
+---
+
+# 8. Static BB3 rules and data
+
+## DONE — Read bb3rulesengine.zip
+
+Priority: `P0`
+
+Expected archive:
+
+```text
+BB3/Content/OfflineServer/bb3rulesengine.zip
+```
+
+Contains:
+
+```text
+Datas/BB3Rules.json
+Datas/Effects.json
+Datas/SPCs.json
+Datas/TextGeneration.json
+```
+
+---
+
+## DONE — Read bb3.zip
+
+Priority: `P1`
+
+Expected archive:
+
+```text
+BB3/Content/OfflineServer/bb3.zip
+```
+
+Known relevant files:
+
+```text
+Datas/BB3Rules.json
+Datas/Rules.json
+Datas/Locas.json
+Datas/PredefinedTeams.json
+Datas/ShopData.json
+```
+
+Do not merge all rule sources destructively.
+
+---
+
+## DONE — Authoritative modern rules API
+
+Priority: `P0`
+
+`bb3rulesengine.zip/Datas/BB3Rules.json` should be treated as the primary current rules source.
+
+The older:
+
+```text
+bb3.zip/Datas/Rules.json
+```
+
+uses a different/legacy schema and must not silently override modern rules.
+
+---
+
+## DONE — Semantic rules-engine API
+
+Priority: `P1`
+
+Expected conceptual API:
+
+```python
+data.rules
+data.effect_catalog
+data.special_play_cards
+data.textgen
+```
+
+Raw access should remain available for reverse engineering and forward compatibility.
+
+---
+
+## PARTIAL — Strong typed rule models
+
+Priority: `P1`
+
+Add or improve semantic models for:
+
+* races
+* rosters
+* positions
+* characteristics
+* skills
+* skill categories
+* inducements
+* special rules
+* casualties
+* casualty effects
+* star players
+* special play cards
+* effects
+
+Consumers should not need to understand raw table layout for common operations.
+
+Desired examples:
+
+```python
+race = data.rules.race_by_code(7)
+
+position = data.rules.position_by_code(1102)
+
+print(position.skills)
+print(position.characteristics)
+```
+
+Implemented without schema guesses:
+
+* typed `PositionRule`, `RaceRule`, `SkillRule`, and `TeamImprovementRule`
+* position characteristics and starting skills
+* every typed view retains its complete raw `RuleRecord`
+
+Remaining types require representative sanitized static-data fixtures before
+their relationships can be modeled safely.
+
+---
 
 # 9. Casualties and injuries
 
-Modern casualty definitions are available. Runtime roster/match injury IDs still
-need to be mapped automatically to static rules.
+## DONE — Current casualty definitions available
 
-# 10. Redraft / journeymen
+Priority: `P1`
 
-Both remain `RESEARCH` (`P1`) and require live protocol captures.
+Known modern casualty codes:
 
-# 11. Capture tooling
+```text
+0  no_casualty
+1  badly_hurt
+2  seriously_hurt
+3  serious_injury
+4  lasting_injury
+5  smashed_knee
+6  head_injury
+7  broken_arm
+8  neck_injury
+9  dislocated_shoulder
+10 dead
+```
 
-pcap/pcapng half-stream reconstruction and redaction are partially implemented.
-Continue improving real-capture verification, sequence-wraparound handling and
-direct request/response correlation.
+Modern rules data also exposes casualty effects including:
 
-# 12. Testing
+* characteristic penalties
+* MNG
+* niggling injuries
+* permanent/temporary effects
+* healability
+* temporary retirement eligibility
 
-Live tests require `PYBB3_RUN_LIVE_TESTS=1`. Destructive tests additionally
-require `PYBB3_ALLOW_DESTRUCTIVE_TESTS=1`.
+---
 
-Golden sanitized fixtures should include roster, player improvements,
-characteristic roll, delete-team response, game listing and game result.
+## TODO — Map runtime injuries to static rules
 
-# 13. Immediate priorities
+Priority: `P1`
+
+When roster/match responses expose injury IDs, resolve them automatically to semantic injury objects.
+
+Desired API:
+
+```python
+player.injuries
+
+for injury in player.injuries:
+    print(injury.name)
+    print(injury.miss_next_game)
+    print(injury.characteristic_modifier)
+```
+
+---
+
+# 10. Special Play Cards
+
+## DONE — Static SPC relationship model
+
+Priority: `P2`
+
+Known relationship:
+
+```text
+BB3Rules.bb3_rules_spc
+→ SPCs.json
+→ Effects.json
+```
+
+Example:
+
+```text
+SPC code 12
+→ Experimental_Footgear
+→ effect 19
+→ additional skills + characteristic modifiers
+```
+
+---
+
+## TODO — Runtime SPC protocol
+
+Priority: `P3`
+
+If useful, reverse engineer:
+
+* available cards
+* owned cards
+* selected cards
+* activation
+* target selection
+* triggered card effects
+
+This is lower priority than core team and match APIs.
+
+---
+
+# 11. Shop and collection data
+
+## PARTIAL — Static ShopData support
+
+Priority: `P3`
+
+Known tables:
+
+```text
+bb_content
+bb_shop_item
+bb_shop_item_category
+bb_shop_item_content
+```
+
+Known content types include:
+
+```text
+Jersey
+Starplayer
+Ball
+```
+
+Important ID distinction:
+
+```text
+shop item id
+content row id
+asset/content id
+```
+
+Do not treat these as interchangeable.
+
+---
+
+## RESEARCH — Modern account collection mapping
+
+Priority: `P2`
+
+Static `ShopData.json` does not fully describe modern BB3 account customization.
+
+Need to determine whether:
+
+```text
+backend collection UUID
+→ asset/content ID
+→ static content metadata
+```
+
+can be mapped reliably.
+
+---
+
+# 12. Redraft and season lifecycle
+
+## RESEARCH — Redraft
+
+Priority: `P1`
+
+Need to capture and model:
+
+* redraft eligibility
+* redraft budget
+* retained players
+* agent fees
+* rerolls/improvements retention
+* player retirement
+* journeymen
+* treasury changes
+* team state transitions
+
+This is required before pybb3 can fully manage persistent league teams.
+
+---
+
+## RESEARCH — Journeymen
+
+Priority: `P1`
+
+Determine:
+
+* how journeymen appear in roster responses
+* whether they have temporary UUIDs
+* how hiring after a match works
+* how loner skills are represented
+* request messages used to permanently hire them
+
+---
+
+# 13. Event and protocol discovery
+
+## DONE — Message catalog
+
+Priority: `P1`
+
+Maintain a machine-readable catalog of known BB3 messages.
+
+Suggested file:
+
+```text
+docs/messages.json
+```
+
+Fields:
+
+```json
+{
+  "RequestCreateTeam": {
+    "response": "ResponseCreateTeam",
+    "status": "verified",
+    "direction": "client_to_server"
+  }
+}
+```
+
+This should eventually include:
+
+* request name
+* response name
+* direction
+* known body fields
+* Base64 fields
+* verified/unverified status
+* example capture reference if available
+
+Implemented in `docs/messages.json` with an offline consistency test against
+literal request/response pairs in the client. Capture references remain absent
+where the repository has no sanitized capture corpus.
+
+---
+
+## DONE — Unknown enum tracking
+
+Priority: `P2`
+
+Maintain discovered but unresolved:
+
+* event IDs
+* state IDs
+* match status IDs
+* competition types
+* player states
+* error codes
+* collection types
+
+Do not silently guess enum meanings.
+
+Implemented in `docs/unknown-enums.json`. Entries carry explicit status and
+evidence, and tests reject meanings without a recognized evidence label.
+
+---
+
+# 14. Capture tooling
+
+## PARTIAL — Raw TCP capture parser
+
+Priority: `P1`
+
+Wireshark "Follow TCP Stream" raw exports may interleave both TCP directions.
+
+This can cause incorrect:
+
+```text
+Data.size
+```
+
+interpretation.
+
+Current parser should recover by scanning for plausible `<Header>` boundaries.
+
+---
+
+## PARTIAL — Proper pcap half-stream reconstruction
+
+Priority: `P1`
+
+Implement parser that:
+
+1. reads pcap/pcapng
+2. identifies BB3 TCP connection
+3. reconstructs each TCP direction independently
+4. handles retransmissions
+5. parses BB3 frames
+6. correlates requests and responses
+
+Desired output:
+
+```text
+timestamp
+direction
+MessageName
+MessageToken
+body Token
+decoded body
+```
+
+Implemented offline:
+
+* classic pcap and pcapng readers
+* Ethernet and raw-IP IPv4/IPv6 TCP decoding
+* independent directional grouping
+* overlap/retransmission removal
+* stream splitting at missing sequence ranges
+* synthetic pcap and pcapng tests
+
+Remaining:
+
+* IPv4 fragment and IPv6 extension-header handling
+* TCP sequence-number wraparound
+* timestamps per decoded BB3 frame rather than per contiguous TCP chunk
+* direct BB3 frame parsing/correlation in the pcap command
+* verification against real retransmission-heavy captures
+
+---
+
+## DONE — Sensitive-data redaction
+
+Priority: `P0`
+
+All capture/debug tooling must redact:
+
+* AuthToken
+* Steam tickets
+* Steam refresh tokens
+* passwords
+* Steam Guard secrets/codes
+* legacy Cyanide/API credentials
+
+Redaction should happen before logs are persisted.
+
+Implemented:
+
+* central text redaction for XML, JSON, dotenv-style assignments, and bearer
+  authorization values
+* recursive mapping redaction for structured diagnostics
+* BB3 request error messages are redacted while `raw_response` remains
+  explicitly available for controlled diagnostics
+* current capture tools emit frame metadata or non-secret collection IDs and
+  do not persist decoded authentication request bodies
+
+---
+
+# 15. Client architecture
+
+## PARTIAL — Event dispatcher
+
+Priority: `P1`
+
+Current request/response API will eventually need to coexist with asynchronous server notifications.
+
+Implement a dispatcher capable of:
+
+* request/response correlation
+* keepalive handling
+* unsolicited notifications
+* callbacks/subscriptions
+* replay/live-game events
+* graceful cancellation
+
+Implemented for the synchronous client:
+
+* unexpected frames are queued rather than discarded
+* queued responses can later satisfy message-name/token correlation
+* message-specific and wildcard subscriptions
+* callback failures are isolated and retrievable
+* keepalive advice is available as an unsolicited notification
+
+Remaining:
+
+* background reading/concurrent outstanding requests
+* replay/live-game event semantics
+* explicit cancellation primitives
+
+---
+
+## TODO — Reconnect behavior
+
+Priority: `P1`
+
+Determine and implement:
+
+* reconnect after network drop
+* authentication after reconnect
+* account-session behavior
+* request retry safety
+* idempotent vs destructive requests
+
+Never automatically retry destructive operations unless safety is proven.
+
+---
+
+## TODO — Async client
+
+Priority: `P2`
+
+Consider:
+
+```python
+async with AsyncBB3Client.from_steam() as client:
+    ...
+```
+
+Only implement after synchronous API/protocol behavior is stable.
+
+---
+
+# 16. Testing
+
+## DONE — Unit tests
+
+Priority: `P0`
+
+Existing tests cover at least parts of:
+
+* encoding
+* replay decoding
+* backend discovery
+* rules/static data
+* archive loading
+* protocol helpers
+
+---
+
+## PARTIAL — Live integration tests
+
+Priority: `P1`
+
+Live tests must be opt-in.
+
+Never run against a real account during ordinary unit tests.
+
+Suggested markers:
+
+```python
+@pytest.mark.live
+@pytest.mark.destructive
+```
+
+Example:
+
+```bash
+pytest -m live
+```
+
+Team creation should additionally require an explicit destructive flag.
+
+Example:
+
+```bash
+PYBB3_ALLOW_DESTRUCTIVE_TESTS=1
+```
+
+Acceptance criteria:
+
+* unit tests never access Steam or BB3 backend
+* live tests are clearly separated
+* destructive tests require explicit opt-in
+
+Implemented:
+
+* live tests require `PYBB3_RUN_LIVE_TESTS=1`
+* destructive tests additionally require `PYBB3_ALLOW_DESTRUCTIVE_TESTS=1`
+* pytest markers are registered centrally
+* test collection itself performs no network or account mutation
+
+---
+
+## TODO — Golden protocol fixtures
+
+Priority: `P1`
+
+Store sanitized protocol fixtures for:
+
+* login success
+* login failure
+* create team
+* hire player
+* fire player
+* formations
+* collection items
+* replay response
+* roster response
+
+Tests should operate against sanitized captures rather than requiring live backend access.
+
+---
+
+# 17. Documentation
+
+## PARTIAL — Protocol documentation
+
+Priority: `P1`
+
+Maintain:
+
+```text
+docs/PROTOCOL.md
+```
+
+Include:
+
+* framing
+* token semantics
+* Base64 conventions
+* bootstrap discovery
+* authentication
+* known request/response pairs
+* exception semantics
+* replay encoding
+
+Clearly label everything as:
+
+```text
+VERIFIED
+INFERRED
+UNKNOWN
+```
+
+Core framing, tokens, response handling, authentication and replay sections now
+carry evidence labels and link to the machine-readable catalogs. Remaining
+older sections still need claim-by-claim classification.
+
+---
+
+## DONE — Data source documentation
+
+Priority: `P1`
+
+Maintain:
+
+```text
+docs/DATA_SOURCES.md
+```
+
+Document source precedence and intended usage for:
+
+```text
+bb3rulesengine.zip
+bb3.zip
+BB3Rules.json
+Rules.json
+Effects.json
+SPCs.json
+TextGeneration.json
+ShopData.json
+```
+
+Implemented in `docs/DATA_SOURCES.md`, including source precedence, archive
+roles, raw-data preservation and identifier namespace boundaries.
+
+---
+
+# 18. Immediate priorities
+
+Codex should generally work in this order unless a task explicitly says otherwise.
 
 ## P0
-1. land/verify player advancement API
+
+1. `ResponseGetTeamRoster`
 2. `GetGames`
 3. `GetGameResult`
-4. structured `MatchResult`
+4. structured MatchResult
+5. player advancement protocol
 
 ## P1
-5. graceful session lifecycle/logout
-6. collection-item ID semantics
-7. runtime injury mapping
-8. redraft
-9. journeymen
-10. event dispatcher
-11. reconnect behavior
-12. pcap reconstruction improvements
 
-# 14. Codex working rules
+6. graceful session lifecycle/logout
+7. delete-team protocol
+8. collection-item ID semantics
+9. runtime injury mapping
+10. redraft
+11. journeymen
+12. event dispatcher
+13. reconnect behavior
+14. proper pcap half-stream reconstruction
 
-1. Read this backlog first.
-2. Inspect existing implementation before creating parallel abstractions.
-3. Extend existing APIs rather than duplicating them.
-4. Do not assume all responses contain `<Result>`.
-5. Preserve raw protocol/data alongside semantic abstractions.
+## P2
+
+15. cosmetics completeness
+16. formation semantics
+17. typed static-rule convenience APIs
+18. async client
+
+## P3
+
+19. Special Play Card runtime API
+20. legacy shop/content mapping improvements
+
+---
+
+# 19. Codex working rules
+
+When Codex works on this repository:
+
+1. Read this backlog before starting protocol work.
+2. Inspect existing implementation before creating a parallel abstraction.
+3. Prefer extending existing public APIs over adding duplicate APIs.
+4. Do not assume all BB3 responses contain `<Result>`.
+5. Preserve raw protocol/data access alongside semantic abstractions.
 6. Never invent protocol fields or enum meanings.
-7. Mark evidence as verified / observed / inferred / unknown.
-8. Add sanitized fixture tests for parsers/protocol behavior.
-9. Never log credentials/tokens.
-10. Never hardcode discovered application servers.
-11. Destructive live tests require explicit opt-in.
-12. Update this backlog when protocol knowledge changes.
+7. Clearly distinguish:
+
+   * verified from live backend
+   * observed in captures
+   * inferred
+   * unknown
+8. Add tests for every parser/protocol behavior where a sanitized fixture is available.
+9. Never log or commit credentials/tokens.
+10. Do not hardcode dynamically discovered BB3 application servers.
+11. Destructive live tests must require explicit opt-in.
+12. Update this backlog when a task is completed or when new protocol behavior is discovered.

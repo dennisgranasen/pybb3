@@ -1,0 +1,11 @@
+{
+  "collection_item_id_kind": {"status": "unknown", "values": [], "notes": "CollectionItem.Id and CollectionItemInstance.Id are distinct; setter-specific semantics are unresolved."},
+  "competition_type": {"status": "unknown", "values": []},
+  "error_code": {"status": "partial", "values": [{"value": 11, "meaning": "account_already_logged_in", "evidence": "observed"}]},
+  "event_id": {"status": "unknown", "values": []},
+  "formation_type": {"status": "verified", "values": [{"value": 0, "meaning": "defensive", "evidence": "observed_and_live_verified"}, {"value": 1, "meaning": "offensive", "evidence": "observed_and_live_verified"}]},
+  "game_status": {"status": "unknown", "values": []},
+  "player_state": {"status": "unknown", "values": []},
+  "replay_event_type": {"status": "unknown", "values": []},
+  "team_improvement_id": {"status": "verified", "values": [{"value": 1, "meaning": "apothecary", "evidence": "rules_data_and_live_verified"}, {"value": 2, "meaning": "cheerleader", "evidence": "rules_data_and_live_verified"}, {"value": 3, "meaning": "assistant_coach", "evidence": "rules_data_and_live_verified"}, {"value": 4, "meaning": "reroll", "evidence": "rules_data_and_live_verified"}, {"value": 5, "meaning": "dedicated_fans", "evidence": "rules_data_and_live_verified"}]}
+}

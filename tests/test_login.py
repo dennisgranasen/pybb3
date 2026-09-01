@@ -1,18 +1,36 @@
-from bb3 import BB3Client, BB3RequestError 
+from __future__ import annotations
 
-with BB3Client.from_steam() as client:
-    while True:
-        try:
-            client.login()
-            print("BB3 login succeded")
-            break
-        except BB3RequestError as e:
-            print(f"BB3 login failed: {e}")
+import os
 
-    print("Creating team race 2")
-    team_id = client.create_team(
-        name="pybb3 Test",
-        race_id=2,
-    )
-    print(team_id)
-print("Bye.")
+import pytest
+
+from bb3 import BB3Client
+
+
+pytestmark = pytest.mark.live
+
+
+def require_opt_in(variable: str) -> None:
+    if os.environ.get(variable) != "1":
+        pytest.skip(f"set {variable}=1 to run this test")
+
+
+def test_live_login():
+    require_opt_in("PYBB3_RUN_LIVE_TESTS")
+
+    with BB3Client.from_steam() as client:
+        root = client.login()
+
+    assert root.tag == "ResponseLogin"
+
+
+@pytest.mark.destructive
+def test_live_create_team():
+    require_opt_in("PYBB3_RUN_LIVE_TESTS")
+    require_opt_in("PYBB3_ALLOW_DESTRUCTIVE_TESTS")
+
+    with BB3Client.from_steam() as client:
+        client.login()
+        team_id = client.create_team(name="pybb3 Test", race_id=2)
+
+    assert team_id
