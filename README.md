@@ -30,10 +30,6 @@ The latest roster capture distinguishes roster-position templates in
 `RaceRoster` from actual hired players in `TeamRoster`. The client preserves raw
 XML alongside structured runtime models.
 
-Full structured roster parsing also awaits a sanitized real
-`ResponseGetTeamRoster`; the client deliberately does not guess unknown field
-names or enum meanings.
-
 ## Install
 
 ```bash
@@ -44,24 +40,8 @@ pip install -e '.[test]'
 pytest
 ```
 
-Install test dependencies and run the offline suite with:
-
-```bash
-pip install -e '.[test]'
-pytest
-```
-
-Live tests are skipped unless `PYBB3_RUN_LIVE_TESTS=1` is set. Tests that
-mutate account state additionally require
-`PYBB3_ALLOW_DESTRUCTIVE_TESTS=1`.
-
-Windows:
-
-```powershell
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -e .
-```
+Live tests require `PYBB3_RUN_LIVE_TESTS=1`. Destructive account mutations must
+also require `PYBB3_ALLOW_DESTRUCTIVE_TESTS=1`.
 
 ## Steam authentication
 
@@ -172,120 +152,5 @@ ReplayData -> Base64 -> Base64 -> zlib -> XML
 
 ## Next protocol targets
 
-```dotenv
-# BB3_RULES_ENGINE_ZIP=C:\path\to\bb3rulesengine.zip
-# BB3_DATA_ZIP=C:\path\to\bb3.zip
-```
-
-Real environment variables override `.env` values. Resolve and validate the
-configured archives with:
-
-```python
-from bb3 import BB3Data
-
-data = BB3Data.from_env()
-```
-
-Point the client at your local copy:
-
-```bash
-export BB3_RULES_FILE=/path/to/BB3Rules.json
-```
-
-or load it directly:
-
-```python
-from bb3 import BB3Rules
-
-rules = BB3Rules.load("/path/to/BB3Rules.json")
-wardancer = rules.position_by_code(1102)
-print(wardancer.name)
-print(rules.position_characteristics(wardancer.name))
-print(rules.position_skills(wardancer.name))
-print(rules.sha256)
-```
-
-Typed position views retain raw data while exposing common relationships:
-
-```python
-position = rules.position_by_code(1102)
-print(position.characteristics)
-print(position.skills)
-print(position.record)
-```
-
-The file contains rule definitions such as races, positions, characteristics, skills, skill-category affinities, roster definitions, special rules, casualties, inducements and team improvements. Runtime/backend state remains separate from these static definitions.
-
-`BB3Rules.json` and `bb3rulesengine/` are ignored by Git.
-
-## Team cosmetics
-
-Verified collection tags:
-
-| Slot | Collection tag | Setter |
-|---|---|---|
-| Jersey pattern | `TeamCustoJerseyPattern` | `RequestSetTeamJerseyPattern` |
-| Colors | `TeamCustoColor` | primary/secondary/tertiary color setters |
-| Cheerleader | `TeamCustoCheerleader` | `RequestSetTeamCheerleader` |
-| Coach | `TeamCustoCoach` | `RequestSetTeamCoach` |
-| Pitch | `TeamCustoPitch` | `RequestSetTeamPitch` |
-| Stadium | `TeamCustoStadium` | `RequestSetTeamStadium` |
-| Coach zone | `TeamCustoCoachZone` | `RequestSetTeamCoachZone` |
-| Staff zone | `TeamCustoStaffZone` | `RequestSetTeamStaffZone` |
-| Cheerleader zone | `TeamCustoCheerleaderZone` | `RequestSetTeamCheerleaderZone` |
-| Dice | `TeamCustoDice` | `RequestSetTeamDice` |
-| Ball | `TeamCustoBall` | `RequestSetTeamBall` |
-
-Logo/emblem discovery/setter and the exact collection `Item` vs `Instance` ID semantics are still open reverse-engineering items.
-
-## Team improvements
-
-Captured `RequestUpdateTeamImprovements` uses a **signed delta** in `Quantity`, not an absolute quantity. The standard IDs observed are 1–5; when available, prefer resolving rule IDs through the local `BB3Rules.json` instead of duplicating game rules in application code.
-
-## Formations
-
-Captured formation types:
-
-| Type | Meaning |
-|---:|---|
-| 0 | Defensive |
-| 1 | Offensive |
-
-Formation `Data` is Base64-encoded JSON containing a `pitchMap`.
-
-## Capture tools
-
-List/recover BB3 frames from a raw Follow TCP Stream export:
-
-```bash
-python tools/parse_tcp_stream.py stream.bin
-```
-
-Reconstruct TCP directions independently from pcap or pcapng:
-
-```bash
-python tools/parse_pcap.py capture.pcapng --port 17010 --output-prefix bb3-stream
-```
-
-The pcap parser handles Ethernet or raw-IP IPv4/IPv6 TCP, separates both
-directions, removes retransmitted overlap and splits streams at sequence gaps.
-Written stream chunks are redacted with length-preserving replacements so BB3
-frame offsets remain usable without persisting labelled credentials.
-
-Analyze collection tags and cosmetic setters across **all `.bin` files in a directory**:
-
-```bash
-python tools/analyze_collection_tags.py .
-```
-
-## Known gaps
-
-- exact `RequestDeleteTeam` body
-- typed `ResponseGetTeamRoster`/`ResponseGetRoster` models
-- game discovery (`GetGames` -> result -> replay) as a high-level API
-- logo/emblem setter and discovery tag
-- collection item vs item-instance ID semantics for cosmetics
-- level-up/skills write API
-- journeymen/redraft workflows
-- long-lived async event dispatcher/reconnect semantics
-- replay semantic event/enumeration layer
+The highest-priority remaining captures are `GetGames` and `GetGameResult`, then
+structured `MatchResult`, redraft and journeymen.

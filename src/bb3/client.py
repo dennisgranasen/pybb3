@@ -5,7 +5,6 @@ import json
 import socket
 import xml.etree.ElementTree as ET
 from collections import deque
-from pathlib import Path
 from typing import Callable, Iterable
 
 from .constants import DEFAULT_CLIENT_VERSION
@@ -130,35 +129,22 @@ class BB3Client:
             raise RuntimeError("BB3Client is not connected")
         return self.sock
 
-    def _wait_for(
-        self,
-        expected_name: str,
-        expected_message_token: int,
-    ) -> BB3Frame:
+    def _wait_for(self, expected_name: str, expected_message_token: int) -> BB3Frame:
         queued = self._take_queued(expected_name, expected_message_token)
         if queued is not None:
             return queued
-
         sock = self._socket()
         while True:
             frame = recv_frame(sock)
-            if (
-                frame.message_name == expected_name
-                and frame.message_token == expected_message_token
-            ):
+            if frame.message_name == expected_name and frame.message_token == expected_message_token:
                 return frame
             self._dispatch(frame)
 
     def _take_queued(
-        self,
-        expected_name: str,
-        expected_message_token: int,
+        self, expected_name: str, expected_message_token: int
     ) -> BB3Frame | None:
         for index, frame in enumerate(self._inbox):
-            if (
-                frame.message_name == expected_name
-                and frame.message_token == expected_message_token
-            ):
+            if frame.message_name == expected_name and frame.message_token == expected_message_token:
                 self._inbox.rotate(-index)
                 result = self._inbox.popleft()
                 self._inbox.rotate(index)
@@ -166,7 +152,6 @@ class BB3Client:
         return None
 
     def _dispatch(self, frame: BB3Frame) -> None:
-        """Queue an unsolicited frame and notify matching subscribers."""
         self._inbox.append(frame)
         callbacks = (
             *self._subscribers.get(frame.message_name, ()),
@@ -176,24 +161,14 @@ class BB3Client:
             try:
                 callback(frame)
             except Exception as exc:
-                # Callback failures must not corrupt transport correlation.
                 self._callback_errors.append((frame, exc))
 
-    def subscribe(
-        self,
-        message_name: str | None,
-        callback: Callable[[BB3Frame], None],
-    ) -> None:
-        """Subscribe to a message name, or to all messages with ``None``."""
+    def subscribe(self, message_name: str | None, callback: Callable[[BB3Frame], None]) -> None:
         callbacks = self._subscribers.setdefault(message_name, [])
         if callback not in callbacks:
             callbacks.append(callback)
 
-    def unsubscribe(
-        self,
-        message_name: str | None,
-        callback: Callable[[BB3Frame], None],
-    ) -> None:
+    def unsubscribe(self, message_name: str | None, callback: Callable[[BB3Frame], None]) -> None:
         callbacks = self._subscribers.get(message_name)
         if callbacks is None:
             return
@@ -205,7 +180,6 @@ class BB3Client:
             del self._subscribers[message_name]
 
     def pop_notification(self, message_name: str | None = None) -> BB3Frame | None:
-        """Remove the oldest queued unsolicited frame, optionally by name."""
         for index, frame in enumerate(self._inbox):
             if message_name is None or frame.message_name == message_name:
                 self._inbox.rotate(-index)
@@ -232,16 +206,9 @@ class BB3Client:
             if exception is None:
                 exception = exceptions[0]
 
-        # Some responses wrap one or more exception records in <Exceptions>.
-        if exception is None and exceptions is not None and len(exceptions):
-            exception = exceptions.find("Exception")
-            if exception is None:
-                exception = exceptions[0]
-
         if exception is not None:
             code_text = exception.findtext("Code")
             desc_b64 = exception.findtext("Desc")
-
             try:
                 code = int(code_text) if code_text else None
             except ValueError:
@@ -253,8 +220,7 @@ class BB3Client:
                 except (ValueError, UnicodeDecodeError, base64.binascii.Error):
                     description = desc_b64
             raise BB3RequestError(
-                f"{frame.message_name} failed "
-                f"(code {code}): "
+                f"{frame.message_name} failed (code {code}): "
                 f"{redact_text(description) if description else 'Unknown error'}",
                 code=code,
                 description=description,
@@ -262,23 +228,15 @@ class BB3Client:
                 raw_response=frame.body,
                 frame=frame,
             )
-        return root
 
-        # Explicit Result field: 0 = failure, non-zero = success
-        if result is not None:
-            if result == "0":
-                raise BB3RequestError(
-                    f"{frame.message_name} Result={result}: "
-                    f"{redact_text(frame.body[:4000])}",
-                    description="Result=0",
-                    message_name=frame.message_name,
-                    raw_response=frame.body,
-                    frame=frame,
-                )
-
-            return root
-
-        # No Result and no exception = valid success response
+        if result is not None and result == "0":
+            raise BB3RequestError(
+                f"{frame.message_name} Result={result}: {redact_text(frame.body[:4000])}",
+                description="Result=0",
+                message_name=frame.message_name,
+                raw_response=frame.body,
+                frame=frame,
+            )
         return root
 
     def keepalive(self) -> None:
@@ -287,12 +245,8 @@ class BB3Client:
         self._wait_for("NotificationKeepAlive", mt)
 
     def request_frame(
-        self,
-        request_name: str,
-        response_name: str,
-        extra_xml: str = "",
+        self, request_name: str, response_name: str, extra_xml: str = ""
     ) -> BB3Frame:
-        """Send a request and return its raw correlated response frame."""
         mt = self._next_message_token()
         token = self._next_body_token()
         body = (
@@ -304,14 +258,11 @@ class BB3Client:
         return self._wait_for(response_name, mt)
 
     def request(
-        self,
-        request_name: str,
-        response_name: str,
-        extra_xml: str = "",
+        self, request_name: str, response_name: str, extra_xml: str = ""
     ) -> ET.Element:
-        """Send a request and return its validated XML response root."""
-        frame = self.request_frame(request_name, response_name, extra_xml)
-        return self._assert_success(frame)
+        return self._assert_success(
+            self.request_frame(request_name, response_name, extra_xml)
+        )
 
     def get_server_status(self) -> ET.Element:
         return self.request(
@@ -457,9 +408,9 @@ class BB3Client:
             raw = ET.tostring(root, encoding="unicode")
             raise BB3RequestError(
                 "ResponseCreateTeam did not contain IdTeam: "
-                f"{redact_text(ET.tostring(root, encoding='unicode')[:4000])}",
+                f"{redact_text(raw[:4000])}",
                 message_name="ResponseCreateTeam",
-                raw_response=ET.tostring(root, encoding="unicode"),
+                raw_response=raw,
             )
         return b64_decode_text(encoded)
 
