@@ -54,11 +54,24 @@ def test_secure_password_prompt_fallback(monkeypatch, tmp_path):
     def fake_run(command, **kwargs):
         seen.update(kwargs["env"])
         payload = {"username": "u", "refreshToken": "r", "guardData": None}
-        return type("Result", (), {"stdout": json.dumps(payload)})()
+        return type("Result", (), {"stdout": json.dumps(payload), "stderr": "",
+                                    "returncode": 0})()
 
     monkeypatch.setattr("bb3.steam.subprocess.run", fake_run)
     auth._bootstrap("u", None)
     assert seen["STEAM_PASSWORD"] == "prompt-secret"
+
+
+def test_bootstrap_accepts_json_after_dotnet_build_output(monkeypatch, tmp_path):
+    payload = {"username": "u", "refreshToken": "r", "guardData": None}
+
+    def fake_run(*args, **kwargs):
+        return type("Result", (), {"stdout": f"Build succeeded.\n{json.dumps(payload)}\n",
+                                    "stderr": "", "returncode": 0})()
+
+    monkeypatch.setattr("bb3.steam.subprocess.run", fake_run)
+    auth = SteamAuthProcess("helper", cache_path=tmp_path / "cache", environ={})
+    assert auth._bootstrap("u", "secret").refresh_token == "r"
 
 
 def test_helper_process_cleanup(monkeypatch, tmp_path):
