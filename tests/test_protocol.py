@@ -53,6 +53,11 @@ def test_recv_frame_handles_fragmented_frame():
     assert frame.body == body
 
 
+def test_recv_frame_accepts_no_as_an_uncompressed_variant():
+    frame = recv_frame(FragmentedSocket(encoded_frame("<ResponseExample/>", zipped="no")))
+    assert frame.zipped == "no"
+
+
 @pytest.mark.parametrize(
     "overrides, message",
     [

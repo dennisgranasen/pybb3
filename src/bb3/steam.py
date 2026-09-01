@@ -137,12 +137,17 @@ class SteamAuthProcess:
                 env=child_env, text=True, bufsize=1)
             if self.process.stdout is None:
                 raise RuntimeError("Steam helper stdout is unavailable")
-            line = self.process.stdout.readline()
-            if not line:
-                self.process.wait()
-                raise RuntimeError("Steam helper exited before returning a ticket "
-                                   f"(exit code {self.process.returncode})")
-            data = json.loads(line)
+            while True:
+                line = self.process.stdout.readline()
+                if not line:
+                    self.process.wait()
+                    raise RuntimeError("Steam helper exited before returning a ticket "
+                                       f"(exit code {self.process.returncode})")
+                try:
+                    data = json.loads(line)
+                    break
+                except json.JSONDecodeError:
+                    continue
             self.ticket = SteamTicket(str(data["steamId"]), str(data["authToken"]))
             return self.ticket
         except Exception:

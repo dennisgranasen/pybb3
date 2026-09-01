@@ -57,7 +57,7 @@ def recv_frame(sock: socket.socket) -> BB3Frame:
     if body_size < 0:
         raise BB3ProtocolError(f"Invalid BB3 body length: {body_size}")
     zipped = data_el.attrib.get("zipped")
-    if zipped not in (None, "false"):
+    if zipped not in (None, "false", "no"):
         raise BB3ProtocolError(f"Unsupported BB3 frame compression: {zipped!r}")
 
     body_bytes = recv_exact(sock, body_size)
