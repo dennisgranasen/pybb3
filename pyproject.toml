@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "bb3-client"
+name = "pybb3"
 version = "0.1.0"
 description = "Unofficial headless Python client for the Blood Bowl 3 backend protocol"
 readme = "README.md"

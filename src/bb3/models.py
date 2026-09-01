@@ -15,6 +15,16 @@ def _int(element: ET.Element | None, path: str, default: int = 0) -> int:
         return default
 
 
+def _optional_int(element: ET.Element | None, path: str) -> int | None:
+    text = element.findtext(path) if element is not None else None
+    if text in (None, ""):
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        return None
+
+
 def _bool(element: ET.Element | None, path: str, default: bool = False) -> bool:
     text = element.findtext(path) if element is not None else None
     if text is None:
@@ -32,6 +42,14 @@ def _b64(element: ET.Element | None, path: str) -> str | None:
         # Keep protocol parsing forward-compatible if a field that normally
         # contains Base64 is temporarily emitted as plain text.
         return text
+
+
+def _b64_int(element: ET.Element | None, path: str, default: int = 0) -> int:
+    text = _b64(element, path)
+    try:
+        return int(text) if text not in (None, "") else default
+    except (TypeError, ValueError):
+        return default
 
 
 @dataclass(slots=True)
@@ -158,9 +176,7 @@ class TeamRoster:
         )
 
         inducements: list[RosterizedInducement] = []
-        for item in roster.findall(
-            "./RosterizedInducements/RosterizedInducement"
-        ):
+        for item in roster.findall("./RosterizedInducements/RosterizedInducement"):
             inducement = item.find("Inducement")
             if inducement is None:
                 continue
@@ -247,6 +263,336 @@ class CharacteristicRoll:
             roll=_int(root, "Roll"),
             can_take_secondary_skill=_bool(root, "CanTakeSecondarySkill"),
             characteristics=upgrades,
+            raw_xml=ET.tostring(root, encoding="unicode"),
+        )
+
+
+# ---------- Competition / game models ----------
+
+@dataclass(slots=True, frozen=True)
+class GamerSummary:
+    gamer_id: str | None
+    name: str | None
+
+
+@dataclass(slots=True, frozen=True)
+class TeamSummary:
+    team_id: str | None
+    name: str | None
+    race_id: int | None
+    value: int | None
+
+
+@dataclass(slots=True)
+class Competition:
+    competition_id: str | None
+    name: str | None
+    setting_id: str | None
+    league_id: str | None
+    day: int
+    format: int
+    status: int
+    is_official: bool
+    is_eternal: bool
+    allow_team_registration: bool
+    has_divisions: bool
+    is_cross_play: bool
+    raw_xml: str
+
+    @classmethod
+    def from_element(cls, competition: ET.Element) -> "Competition":
+        return cls(
+            competition_id=_b64(competition, "Id"),
+            name=_b64(competition, "Name"),
+            setting_id=_b64(competition, "SettingId"),
+            league_id=_b64(competition, "LeagueId"),
+            day=_int(competition, "Day"),
+            format=_int(competition, "Format"),
+            status=_int(competition, "Status"),
+            is_official=_bool(competition, "IsOfficial"),
+            is_eternal=_bool(competition, "IsEternal"),
+            allow_team_registration=_bool(competition, "AllowTeamRegistration"),
+            has_divisions=_bool(competition, "HasDivisions"),
+            is_cross_play=_bool(competition, "IsCrossPlay"),
+            raw_xml=ET.tostring(competition, encoding="unicode"),
+        )
+
+    @classmethod
+    def from_response(cls, root: ET.Element) -> "Competition":
+        competition = root.find("Competition")
+        if competition is None:
+            raise ValueError(f"{root.tag} contained no Competition")
+        return cls.from_element(competition)
+
+
+@dataclass(slots=True)
+class CompetitionSetting:
+    redraft_on_team_registration: bool
+    contest_format: int
+    contests_redraft_period: int
+    allow_application: bool
+    max_participants: int
+    has_password: bool
+    allow_participant_match_validation: bool
+    automatic_advancement: bool
+    allow_team_creation: bool
+    timer_id: int
+    allow_experienced_teams: bool
+    allow_custom_teams: bool
+    format: int
+    redraft_on_competition_end: bool
+    allow_ticket_offer: bool
+    enable_ranking: bool
+    accumulate_treasury_for_redraft: bool
+    redraft_treasury_cap: int
+    admission_mode: int
+    allow_ticket_request: bool
+    automatic_validation: bool
+    enable_match_consequences: bool
+    allow_ai_teams: bool
+    banned_special_cards_raw: str | None
+    banned_pitches_raw: str | None
+    raw_xml: str
+
+    @classmethod
+    def from_response(cls, root: ET.Element) -> "CompetitionSetting":
+        setting = root.find("Setting")
+        if setting is None:
+            raise ValueError("ResponseGetCompetitionSetting contained no Setting")
+        return cls(
+            redraft_on_team_registration=_bool(setting, "RedraftOnTeamRegistration"),
+            contest_format=_int(setting, "ContestFormat"),
+            contests_redraft_period=_int(setting, "ContestsRedraftPeriod"),
+            allow_application=_bool(setting, "AllowApplication"),
+            max_participants=_int(setting, "MaxParticipants"),
+            has_password=_bool(setting, "HasPassword"),
+            allow_participant_match_validation=_bool(
+                setting, "AllowParticipantMatchValidation"
+            ),
+            automatic_advancement=_bool(setting, "AutomaticAdvancement"),
+            allow_team_creation=_bool(setting, "AllowTeamCreation"),
+            timer_id=_int(setting, "TimerId"),
+            allow_experienced_teams=_bool(setting, "AllowExperiencedTeams"),
+            allow_custom_teams=_bool(setting, "AllowCustomTeams"),
+            format=_int(setting, "Format"),
+            redraft_on_competition_end=_bool(setting, "RedraftOnCompetitionEnd"),
+            allow_ticket_offer=_bool(setting, "AllowTicketOffer"),
+            enable_ranking=_bool(setting, "EnableRanking"),
+            accumulate_treasury_for_redraft=_bool(
+                setting, "AccumulateTreasuryForRedraft"
+            ),
+            redraft_treasury_cap=_int(setting, "RedraftTreasuryCap"),
+            admission_mode=_int(setting, "AdmissionMode"),
+            allow_ticket_request=_bool(setting, "AllowTicketRequest"),
+            automatic_validation=_bool(setting, "AutomaticValidation"),
+            enable_match_consequences=_bool(setting, "EnableMatchConsequences"),
+            allow_ai_teams=_bool(setting, "AllowAiTeams"),
+            banned_special_cards_raw=setting.findtext("BannedSpecialCards"),
+            banned_pitches_raw=setting.findtext("BannedPitches"),
+            raw_xml=ET.tostring(root, encoding="unicode"),
+        )
+
+
+@dataclass(slots=True, frozen=True)
+class CompetitionMatch:
+    match_id: str | None
+    game_id: str | None
+    status: int
+    home_score: int
+    away_score: int
+    home_team: TeamSummary | None
+    away_team: TeamSummary | None
+    home_gamer: GamerSummary | None
+    away_gamer: GamerSummary | None
+
+
+@dataclass(slots=True, frozen=True)
+class CompetitionContest:
+    contest_id: str | None
+    format: int
+    matches: tuple[CompetitionMatch, ...]
+
+
+@dataclass(slots=True)
+class CompetitionSchedule:
+    day: int
+    competition: Competition | None
+    contests: tuple[CompetitionContest, ...]
+    raw_xml: str
+
+    @classmethod
+    def from_response(cls, root: ET.Element) -> "CompetitionSchedule":
+        contests = []
+        for contest in root.findall("./Schedule/Contest"):
+            matches = tuple(
+                _parse_competition_match(match)
+                for match in contest.findall("./Matches/Match")
+            )
+            contests.append(
+                CompetitionContest(
+                    contest_id=_b64(contest, "Id"),
+                    format=_int(contest, "Format"),
+                    matches=matches,
+                )
+            )
+        competition_element = root.find("Competition")
+        return cls(
+            day=_int(root, "Day"),
+            competition=(
+                Competition.from_element(competition_element)
+                if competition_element is not None
+                else None
+            ),
+            contests=tuple(contests),
+            raw_xml=ET.tostring(root, encoding="unicode"),
+        )
+
+
+@dataclass(slots=True, frozen=True)
+class GameData:
+    game_id: str | None
+    match_id: str | None
+    home_score: int
+    away_score: int
+    home_validation: int
+    away_validation: int
+    has_pending_validation: bool
+    home_team: TeamSummary | None
+    away_team: TeamSummary | None
+    home_gamer: GamerSummary | None
+    away_gamer: GamerSummary | None
+    competition: Competition | None
+
+
+@dataclass(slots=True)
+class GameList:
+    total: int
+    games: tuple[GameData, ...]
+    raw_xml: str
+
+    @classmethod
+    def from_response(cls, root: ET.Element) -> "GameList":
+        return cls(
+            total=_int(root, "Total"),
+            games=tuple(_parse_game_data(game) for game in root.findall("./Games/GameData")),
+            raw_xml=ET.tostring(root, encoding="unicode"),
+        )
+
+
+@dataclass(slots=True, frozen=True)
+class LadderGameGain:
+    old_rating: int
+    new_rating: int
+    old_division: int
+    new_division: int
+
+
+@dataclass(slots=True, frozen=True)
+class TeamGameResultGain:
+    previous_treasury: int
+    new_treasury: int
+    previous_dedicated_fans: int
+    new_dedicated_fans: int
+    dedicated_fans_roll: int
+    fan_attendance: int
+    cash_spent_during_match: int
+
+
+@dataclass(slots=True)
+class GameResult:
+    game_id: str | None
+    match_id: str | None
+    home_score: int
+    away_score: int
+    has_replay: bool
+    is_live: bool
+    has_pending_validation: bool
+    home_has_conceded: bool
+    away_has_conceded: bool
+    home_validation: int
+    away_validation: int
+    home_team: TeamSummary | None
+    away_team: TeamSummary | None
+    home_gamer: GamerSummary | None
+    away_gamer: GamerSummary | None
+    competition: Competition | None
+    home_ladder_gain: LadderGameGain | None
+    away_ladder_gain: LadderGameGain | None
+    home_result_gain: TeamGameResultGain | None
+    away_result_gain: TeamGameResultGain | None
+    raw_xml: str
+
+    @classmethod
+    def from_response(cls, root: ET.Element) -> "GameResult":
+        result = root.find("GameResult")
+        if result is None:
+            raise ValueError("ResponseGetGameResult contained no GameResult")
+        competition_element = result.find("Competition")
+        return cls(
+            game_id=_b64(result, "GameId"),
+            match_id=_b64(result, "MatchId"),
+            home_score=_int(result, "HomeScore"),
+            away_score=_int(result, "AwayScore"),
+            has_replay=_bool(result, "HasReplay"),
+            is_live=_bool(result, "IsLive"),
+            has_pending_validation=_bool(result, "HasPendingValidation"),
+            home_has_conceded=_bool(result, "HomeHasConceded"),
+            away_has_conceded=_bool(result, "AwayHasConceded"),
+            home_validation=_int(result, "HomeValidation"),
+            away_validation=_int(result, "AwayValidation"),
+            home_team=_parse_team_summary(result.find("HomeTeam")),
+            away_team=_parse_team_summary(result.find("AwayTeam")),
+            home_gamer=_parse_gamer_summary(result.find("HomeGamer")),
+            away_gamer=_parse_gamer_summary(result.find("AwayGamer")),
+            competition=(
+                Competition.from_element(competition_element)
+                if competition_element is not None
+                else None
+            ),
+            home_ladder_gain=_parse_ladder_gain(result.find("HomeLadderGameGain")),
+            away_ladder_gain=_parse_ladder_gain(result.find("AwayLadderGameGain")),
+            home_result_gain=_parse_team_game_result_gain(
+                result.find("HomeGameResultGain")
+            ),
+            away_result_gain=_parse_team_game_result_gain(
+                result.find("AwayGameResultGain")
+            ),
+            raw_xml=ET.tostring(root, encoding="unicode"),
+        )
+
+
+@dataclass(slots=True, frozen=True)
+class Statistic:
+    statistic_id: int
+    category_id: int
+    category_name: str | None
+    name: str | None
+    value_text: str | None
+    value: int | None
+    is_highlight: bool
+
+
+@dataclass(slots=True, frozen=True)
+class GamerMatchStatistics:
+    gamer: GamerSummary | None
+    team: TeamSummary | None
+    statistics: tuple[Statistic, ...]
+
+
+@dataclass(slots=True)
+class MatchStatistics:
+    home: GamerMatchStatistics | None
+    away: GamerMatchStatistics | None
+    raw_xml: str
+
+    @classmethod
+    def from_response(cls, root: ET.Element) -> "MatchStatistics":
+        stats = root.find("MatchStatistics")
+        if stats is None:
+            raise ValueError("ResponseGetMatchStatistics contained no MatchStatistics")
+        return cls(
+            home=_parse_gamer_match_statistics(stats.find("HomeGamerStatistics")),
+            away=_parse_gamer_match_statistics(stats.find("AwayGamerStatistics")),
             raw_xml=ET.tostring(root, encoding="unicode"),
         )
 
@@ -344,4 +690,127 @@ def _parse_roster_position(line: ET.Element) -> RosterPosition:
             for category in line.findall("./SkillsCategories/PlayerSkillCategory")
         ),
         raw_xml=ET.tostring(line, encoding="unicode"),
+    )
+
+
+def _parse_gamer_summary(gamer: ET.Element | None) -> GamerSummary | None:
+    if gamer is None:
+        return None
+    return GamerSummary(
+        gamer_id=_b64(gamer, "Id"),
+        name=_b64(gamer, "Name"),
+    )
+
+
+def _parse_team_summary(team: ET.Element | None) -> TeamSummary | None:
+    if team is None:
+        return None
+    return TeamSummary(
+        team_id=_b64(team, "Id"),
+        name=_b64(team, "Name"),
+        race_id=_optional_int(team, "Race"),
+        value=_optional_int(team, "Value"),
+    )
+
+
+def _parse_competition_match(match: ET.Element) -> CompetitionMatch:
+    return CompetitionMatch(
+        match_id=_b64(match, "Id"),
+        game_id=_b64(match, "GameId"),
+        status=_int(match, "Status"),
+        home_score=_int(match, "HomeScore"),
+        away_score=_int(match, "AwayScore"),
+        home_team=_parse_team_summary(match.find("HomeTeam")),
+        away_team=_parse_team_summary(match.find("AwayTeam")),
+        home_gamer=_parse_gamer_summary(match.find("HomeGamer")),
+        away_gamer=_parse_gamer_summary(match.find("AwayGamer")),
+    )
+
+
+def _parse_game_data(game: ET.Element) -> GameData:
+    competition_element = game.find("Competition")
+    return GameData(
+        game_id=_b64(game, "GameId"),
+        match_id=_b64(game, "MatchId"),
+        home_score=_int(game, "HomeScore"),
+        away_score=_int(game, "AwayScore"),
+        home_validation=_int(game, "HomeValidation"),
+        away_validation=_int(game, "AwayValidation"),
+        has_pending_validation=_bool(game, "HasPendingValidation"),
+        home_team=_parse_team_summary(game.find("HomeTeam")),
+        away_team=_parse_team_summary(game.find("AwayTeam")),
+        home_gamer=_parse_gamer_summary(game.find("HomeGamer")),
+        away_gamer=_parse_gamer_summary(game.find("AwayGamer")),
+        competition=(
+            Competition.from_element(competition_element)
+            if competition_element is not None
+            else None
+        ),
+    )
+
+
+def _parse_ladder_gain(element: ET.Element | None) -> LadderGameGain | None:
+    if element is None:
+        return None
+    return LadderGameGain(
+        old_rating=_int(element, "OldRating"),
+        new_rating=_int(element, "NewRating"),
+        old_division=_int(element, "OldDivision"),
+        new_division=_int(element, "NewDivision"),
+    )
+
+
+def _parse_team_game_result_gain(
+    element: ET.Element | None,
+) -> TeamGameResultGain | None:
+    if element is None:
+        return None
+    return TeamGameResultGain(
+        previous_treasury=_int(element, "PreviousTreasury"),
+        new_treasury=_int(element, "NewTreasury"),
+        previous_dedicated_fans=_int(element, "PreviousDedicatedFans"),
+        new_dedicated_fans=_int(element, "NewDedicatedFans"),
+        dedicated_fans_roll=_int(element, "DedicatedFansRoll"),
+        fan_attendance=_int(element, "FanAttendance"),
+        cash_spent_during_match=_int(element, "CashSpentDuringMatch"),
+    )
+
+
+def _parse_statistic(item: ET.Element) -> Statistic:
+    value_text = _b64(item, "Value")
+    try:
+        value = int(value_text) if value_text not in (None, "") else None
+    except ValueError:
+        value = None
+    return Statistic(
+        statistic_id=_int(item, "Id"),
+        category_id=_int(item, "CategoryId"),
+        category_name=_b64(item, "CategoryName"),
+        name=_b64(item, "Name"),
+        value_text=value_text,
+        value=value,
+        is_highlight=_bool(item, "IsHighlight"),
+    )
+
+
+def _parse_gamer_match_statistics(
+    element: ET.Element | None,
+) -> GamerMatchStatistics | None:
+    if element is None:
+        return None
+    team_statistics = element.find("TeamStatistics")
+    statistics = (
+        tuple(
+            _parse_statistic(item)
+            for item in team_statistics.findall("./Statistics/Statistic")
+        )
+        if team_statistics is not None
+        else ()
+    )
+    return GamerMatchStatistics(
+        gamer=_parse_gamer_summary(element.find("Gamer")),
+        team=_parse_team_summary(
+            team_statistics.find("Team") if team_statistics is not None else None
+        ),
+        statistics=statistics,
     )

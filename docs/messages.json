@@ -119,12 +119,164 @@
       "PlayerFireInfos/PlayerFireInfosItem/PlayerId"
     ]
   },
+  "RequestGetAllRaces": {
+    "response": "ResponseGetAllRaces",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [],
+    "base64_fields": []
+  },
+  "RequestGetAvailableGetGamesTeamValues": {
+    "response": "ResponseGetAvailableGetGamesTeamValues",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [],
+    "base64_fields": []
+  },
+  "RequestGetBattlePassGameXpGain": {
+    "response": "ResponseGetBattlePassGameXpGain",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "GameId"
+    ],
+    "base64_fields": [
+      "GameId"
+    ]
+  },
+  "RequestGetCompetition": {
+    "response": "ResponseGetCompetition",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "IdCompetition"
+    ],
+    "base64_fields": [
+      "IdCompetition"
+    ]
+  },
+  "RequestGetCompetitionDay": {
+    "response": "ResponseGetCompetitionDay",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "IdCompetition"
+    ],
+    "base64_fields": [
+      "IdCompetition"
+    ]
+  },
+  "RequestGetCompetitionFormats": {
+    "response": "ResponseGetCompetitionFormats",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [],
+    "base64_fields": []
+  },
+  "RequestGetCompetitionGamerBanDuration": {
+    "response": "ResponseGetCompetitionGamerBanDuration",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "CompetitionId",
+      "GamerId"
+    ],
+    "base64_fields": [
+      "CompetitionId",
+      "GamerId"
+    ]
+  },
+  "RequestGetCompetitionGamerRegisteredTeams": {
+    "response": "ResponseGetCompetitionGamerRegisteredTeams",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "GamerId",
+      "CompetitionId"
+    ],
+    "base64_fields": [
+      "GamerId",
+      "CompetitionId"
+    ]
+  },
+  "RequestGetCompetitionMenu": {
+    "response": "ResponseGetCompetitionMenu",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "CompetitionId"
+    ],
+    "base64_fields": [
+      "CompetitionId"
+    ]
+  },
+  "RequestGetCompetitionParticipantsByGamer": {
+    "response": "ResponseGetCompetitionRanking",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "CompetitionId",
+      "GamerId"
+    ],
+    "base64_fields": [
+      "CompetitionId",
+      "GamerId"
+    ]
+  },
+  "RequestGetCompetitionRanking": {
+    "response": "ResponseGetCompetitionRanking",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "Size",
+      "Start",
+      "IdCompetition",
+      "Races"
+    ],
+    "base64_fields": [
+      "IdCompetition"
+    ]
+  },
+  "RequestGetCompetitionSchedule": {
+    "response": "ResponseGetCompetitionSchedule",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "IdCompetition",
+      "Day"
+    ],
+    "base64_fields": [
+      "IdCompetition"
+    ]
+  },
+  "RequestGetCompetitionSetting": {
+    "response": "ResponseGetCompetitionSetting",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "SettingId"
+    ],
+    "base64_fields": [
+      "SettingId"
+    ]
+  },
   "RequestGetFreeVcData": {
     "response": "ResponseGetFreeVcData",
     "status": "observed",
     "direction": "client_to_server",
     "body_fields": [],
     "base64_fields": []
+  },
+  "RequestGetGameResult": {
+    "response": "ResponseGetGameResult",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "GameId"
+    ],
+    "base64_fields": [
+      "GameId"
+    ]
   },
   "RequestGetGamerConfig": {
     "response": "ResponseGetGamerConfig",
@@ -141,6 +293,78 @@
       "PlatformName",
       "OssName",
       "UserId"
+    ]
+  },
+  "RequestGetGames": {
+    "response": "ResponseGetGames",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "Size",
+      "Start",
+      "IsLive",
+      "IsOver",
+      "HasReplay",
+      "LeagueIds",
+      "LeagueName",
+      "CompetitionIds",
+      "CompetitionName",
+      "GamerIds",
+      "GamerName",
+      "TeamIds",
+      "TeamName",
+      "MaxDaysSinceGame",
+      "MinRating",
+      "MaxRating",
+      "MinTeamValue",
+      "MaxTeamValue",
+      "GameType",
+      "Races",
+      "OwnRaces",
+      "OpponentRaces",
+      "ContainsAi",
+      "Outcome",
+      "Order",
+      "Descending"
+    ],
+    "base64_fields": [
+      "LeagueIds/LeagueIdsItem",
+      "CompetitionIds/CompetitionIdsItem",
+      "GamerIds/GamerIdsItem",
+      "TeamIds/TeamIdsItem"
+    ]
+  },
+  "RequestGetMatchDiceRolls": {
+    "response": "ResponseGetMatchDiceRolls",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "MatchId"
+    ],
+    "base64_fields": [
+      "MatchId"
+    ]
+  },
+  "RequestGetMatchStatistics": {
+    "response": "ResponseGetMatchStatistics",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "MatchId"
+    ],
+    "base64_fields": [
+      "MatchId"
+    ]
+  },
+  "RequestGetNextMatch": {
+    "response": "ResponseGetNextMatch",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "ParticipantId"
+    ],
+    "base64_fields": [
+      "ParticipantId"
     ]
   },
   "RequestGetPlayerImprovements": {
@@ -163,6 +387,17 @@
     ],
     "base64_fields": [
       "Lang"
+    ]
+  },
+  "RequestGetSppResult": {
+    "response": "ResponseGetSppResult",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "GameId"
+    ],
+    "base64_fields": [
+      "GameId"
     ]
   },
   "RequestGetTeam": {

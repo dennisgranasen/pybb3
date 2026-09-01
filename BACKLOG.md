@@ -21,18 +21,13 @@ Use the bootstrap-returned `tcp://host:port`; never hardcode app servers.
 
 ## PARTIAL — Session lifecycle
 
-An official-client shutdown/logout capture contained no application-level
-logout or disconnect request. The final parsed BB3 traffic was an ordinary
-`NotificationKeepAlive` exchange, after which the BB3 byte stream ended.
-
-Current interpretation:
-- no explicit BB3 XML logout request has been observed
-- clean session termination is therefore expected to happen at the TCP
-  transport level
+An official-client shutdown capture contained no application-level logout or
+disconnect request; the BB3 stream ended after ordinary keepalive traffic.
+Do not invent `RequestLogout`.
 
 Remaining:
-- verify immediate relogin after a clean pybb3 socket shutdown [DONE]
-- measure server behavior / timeout after an abnormal process termination
+- verify immediate relogin after clean pybb3 shutdown
+- characterize abnormal-session timeout/relogin behavior
 
 # 2. Protocol core
 
@@ -78,16 +73,9 @@ Known requests implemented.
 Verify live semantics of `TemporarilyRetire=true`.
 
 ## DONE — Delete team
-Priority: `P1`
 
-Protocol is now **VERIFIED**:
-
-```xml
-<RequestDeleteTeam><IdTeam>BASE64(team UUID)</IdTeam></RequestDeleteTeam>
-```
-
-Implementation is included in this update. Live destructive tests must remain
-explicit opt-in.
+Protocol is **VERIFIED** and the create -> delete lifecycle has passed the
+explicit Windows live/destructive test path. Destructive tests remain opt-in.
 
 ## DONE — Team improvements
 Signed `Quantity` delta, IDs 1-5 confirmed in modern static rules.
@@ -133,36 +121,75 @@ Implemented in this update:
 - fixture-based tests
 
 Remaining edge-case research:
-- a normal-team capture with characteristics upgrade and `CanTakeSecondarySkill=1`
+- a normal-team capture with `CanTakeSecondarySkill=1`
 - duplicate-skill rejection behavior
 - characteristic maximum/invalid-choice errors
 - explicit live destructive tests behind opt-in flags
 
-# 5. Match and game discovery
+# 5. Games, results and competitions
 
-## TODO — GetGames
+## PARTIAL — GetGames / GameData
 Priority: `P2`
 
-Match discovery is currently secondary because the required game list can be
-obtained through the external API. Implement this when direct backend-only
-coverage becomes useful.
+The complete `RequestGetGames` filter envelope is now capture-verified and a
+thin client method plus conservative `GameList` / `GameData` models are
+implemented. Do not assign meanings to captured numeric filter enums until they
+are independently verified.
 
-## TODO — GetGameResult
+## PARTIAL — GetGameResult
 Priority: `P2`
 
-Likewise secondary while the external API provides match results.
+`RequestGetGameResult(GameId)` and a representative full response are
+capture-verified. A structured `GameResult` model now exposes IDs, scores,
+validation/concession state, teams/gamers, competition, ladder gains and
+treasury/dedicated-fan gains while preserving raw XML.
 
-Desired eventual flow:
-`GetGames -> GetGameResult -> DownloadReplay`.
+## PARTIAL — Match statistics
+Priority: `P2`
+
+`RequestGetMatchStatistics(MatchId)` is verified. Structured statistics decode
+the server-provided Base64 category/name/value fields instead of hardcoding
+statistic IDs.
+
+## PARTIAL — Competition / settings
+Priority: `P1`
+
+Implemented and capture-verified:
+- `RequestGetCompetition`
+- `RequestGetCompetitionSetting`
+- structured `Competition` and `CompetitionSetting`
+- `RequestGetCompetitionDay`
+- `RequestGetCompetitionSchedule`
+- structured schedule/contest/match models
+- competition ranking
+- participants-by-gamer
+- next match
+- gamer registered teams
+- gamer ban duration
+- competition menu/formats
+
+This is backend-only league/competition data and is now higher priority than
+generic match search supplied by external APIs.
+
+Remaining:
+- verify numeric enum meanings (`Format`, `ContestFormat`, `AdmissionMode`,
+  schedule/match `Status`, ranking ordering)
+- add representative sanitized fixtures for ranking/next-match edge cases
+- decide which raw competition-menu fields merit semantic models
+
+## PARTIAL — Additional match detail
+Priority: `P2`
+
+Verified thin methods:
+- `GetSppResult`
+- `GetMatchDiceRolls`
+- `GetBattlePassGameXpGain`
+- `GetAvailableGetGamesTeamValues`
+
+Add structured models only where they provide concrete downstream value.
 
 ## DONE — Replay download
 Double Base64 + zlib decode is implemented.
-
-## TODO — Structured MatchResult
-Priority: `P2`
-
-Useful later if pybb3 itself should become the canonical match-result provider.
-For now, team-management and backend-only lifecycle operations take precedence.
 
 ## TODO — Replay semantic event API
 Priority: `P2`
@@ -177,67 +204,19 @@ create behavior remain research items.
 Setters are largely verified. Collection `Item.Id` vs `Instance.Id` semantics
 and logo/emblem remain research items.
 
-A manager-customization capture also observed profile cosmetics and setters for
-gamer avatar, banner and frame, plus title collection tags. These are deliberately
-very low priority for pybb3; document protocol evidence but do not spend core
-implementation time on them.
+Gamer avatar/banner/frame/title customization was also observed but is very low
+priority and should not displace team/competition work.
 
-# 8. Low-priority account / league conveniences
+## P3 — Weekly free Warpstone
 
-## OBSERVED — League search
-Priority: `P2`
+`RequestGetFreeVcData -> ResponseGetFreeVcData` is observed. The wire response
+contains `Retrieved`, `Amount=10`, `Id` and Base64 `AvailableAt`. Capture the
+actual claim mutation before implementing auto-claim. A future explicit,
+idempotent cron-friendly helper is desirable.
 
-`RequestSearchLeagues -> ResponseSearchLeagues` is capture-observed. The
-captured request supports filters for gamer membership, official status,
-personal leagues, pagination and ordering. The response exposes league headers
-including league ID/name, creator, board ID, competition-setting ID and member /
-competition counts.
+Battle-pass and gamer-progression reward unlocks are likewise P3 conveniences.
 
-This may become useful if pybb3 needs direct backend league navigation instead
-of relying on an external API.
-
-## OBSERVED — Weekly free Warpstone status
-Priority: `P3`
-
-`RequestGetFreeVcData -> ResponseGetFreeVcData` is capture-observed.
-
-Observed response fields:
-- `FreeVc/Retrieved`
-- `FreeVc/Amount`
-- `FreeVc/Id`
-- `FreeVc/AvailableAt`
-
-The captured response had `Amount=10`. Product/UI behavior confirms this is the
-weekly free 10-Warpstone reward. `AvailableAt` is Base64 text containing the
-next availability timestamp.
-
-Desired future convenience API:
-- `get_free_warpstone_status()`
-- `claim_free_warpstone()`
-- optional idempotent CLI suitable for cron
-
-Research still required:
-- capture the actual claim request/response
-- observe status when the reward is claimable (`Retrieved` semantics)
-- observe duplicate / too-early claim behavior
-
-Do not auto-claim as an implicit side effect of `login()`.
-
-## OBSERVED — Battle-pass / progression reward unlocks
-Priority: `P3`
-
-The capture includes `RequestUnlockBattlePassAvailableRewards` and
-`RequestUnlockGamerProgressionAvailableRewards`. These are potential future
-explicit auto-claim helpers, but are not part of core team-management work.
-
-## OBSERVED — Gamer profile / social / home data
-Priority: `P3`
-
-The same capture contains gamer profile/social, battle-pass, home-menu,
-spotlight, collection and currency endpoints. Keep them in the protocol catalog
-when exact request structure is known, but implementation is optional.
-
-# 9. Static rules/data
+# 8. Static rules/data
 
 Modern `bb3rulesengine.zip/Datas/BB3Rules.json` is authoritative. Do not merge
 legacy `Rules.json` destructively.
@@ -246,22 +225,22 @@ Typed `PositionRule`, `RaceRule`, `SkillRule` and `TeamImprovementRule` already
 exist. `BB3Rules.skill_by_code()` should be used to map advancement `Skill` IDs
 instead of maintaining a duplicate hardcoded map.
 
-# 10. Casualties and injuries
+# 9. Casualties and injuries
 
 Modern casualty definitions are available. Runtime roster/match injury IDs still
 need to be mapped automatically to static rules.
 
-# 11. Redraft / journeymen
+# 10. Redraft / journeymen
 
 Both remain `RESEARCH` (`P1`) and require live protocol captures.
 
-# 12. Capture tooling
+# 11. Capture tooling
 
 pcap/pcapng half-stream reconstruction and redaction are partially implemented.
 Continue improving real-capture verification, sequence-wraparound handling and
 direct request/response correlation.
 
-# 13. Testing
+# 12. Testing
 
 Live tests require `PYBB3_RUN_LIVE_TESTS=1`. Destructive tests additionally
 require `PYBB3_ALLOW_DESTRUCTIVE_TESTS=1`.
@@ -269,7 +248,7 @@ require `PYBB3_ALLOW_DESTRUCTIVE_TESTS=1`.
 Golden sanitized fixtures should include roster, player improvements,
 characteristic roll, delete-team response, game listing and game result.
 
-# 14. Immediate priorities
+# 13. Immediate priorities
 
 ## P0
 1. finish runtime injury/casualty mapping for roster players
@@ -278,27 +257,27 @@ characteristic roll, delete-team response, game listing and game result.
 4. journeyman protocol
 
 ## P1
-5. temporary-retirement semantics
-6. immediate relogin / abnormal-session lifecycle behavior
-7. competition/team-management protocol gaps not covered by the external API
-8. collection-item ID semantics
-9. event dispatcher
-10. reconnect behavior
-11. pcap reconstruction improvements
+5. competition-setting enum verification and broader competition modeling
+6. schedule / next-match edge-case fixtures
+7. temporary-retirement semantics
+8. immediate relogin / abnormal-session lifecycle behavior
+9. competition/team-management protocol gaps not covered by external APIs
+10. collection-item ID semantics
+11. reconnect behavior
+12. pcap reconstruction improvements
 
 ## P2
-12. direct league-search/navigation support
-13. `GetGames`
-14. `GetGameResult`
-15. structured `MatchResult`
-16. replay semantic event API
+13. broaden `GetGames` filters/models as concrete consumers require
+14. broaden `GetGameResult` / SPP / dice-roll models
+15. replay semantic event API
+16. event dispatcher refinements
 
 ## P3
-17. weekly free Warpstone status / claim helper
+17. weekly free Warpstone claim after claim endpoint capture
 18. battle-pass / gamer-progression reward claim helpers
 19. gamer profile cosmetics/social/home-menu endpoints
 
-# 15. Codex working rules
+# 14. Codex working rules
 
 1. Read this backlog first.
 2. Inspect existing implementation before creating parallel abstractions.

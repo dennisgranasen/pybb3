@@ -1,20 +1,44 @@
-# Capture documentation update
+# pybb3 competition/games capture update
 
-Updated from current pybb3 main documentation plus the
-`stream-mgr-logout.bin` parser output.
+Base: current `main` files from the previously verified merge-fix checkpoint,
+plus the two manager/competition captures discussed on 2026-09-01.
 
-Files:
-- BACKLOG.md
-- docs/PROTOCOL.md
-- docs/messages.json
+Updated:
+- `src/bb3/client.py`
+- `src/bb3/models.py`
+- `tests/test_competition_and_games.py` (new)
+- `docs/messages.json`
+- `docs/PROTOCOL.md`
+- `BACKLOG.md`
 
-Changes:
-- document that no application-level logout/disconnect request was observed
-- document observed league search request/response
-- document weekly free Warpstone status (`Amount=10`, `Retrieved`, `Id`,
-  `AvailableAt`) and keep the unknown claim request as research
-- add Battle Pass / gamer progression reward unlocks as P3 conveniences
-- note gamer avatar/banner/frame/title customization as intentionally very low
-  priority
-- add only protocol fields actually present in reviewed captures; unknown request
-  bodies remain empty rather than guessed
+Implementation:
+- GetGames filter envelope + GameList/GameData
+- GetGameResult + structured GameResult
+- GetMatchStatistics + decoded statistic labels/values
+- GetSppResult, GetMatchDiceRolls, GetBattlePassGameXpGain
+- GetCompetitionFormats, GetAllRaces, GetAvailableGetGamesTeamValues
+- GetCompetition + Competition model
+- GetCompetitionSetting + complete captured CompetitionSetting model
+- GetCompetitionMenu
+- GetCompetitionDay
+- GetCompetitionSchedule + schedule/contest/match models
+- GetCompetitionRanking
+- GetCompetitionParticipantsByGamer
+- GetNextMatch
+- GetCompetitionGamerRegisteredTeams
+- GetCompetitionGamerBanDuration
+
+Documentation also preserves earlier findings:
+- no application-level logout request observed
+- weekly free Warpstone status (`Amount=10`) is observed; claim mutation unknown
+- reward/cosmetic account endpoints remain P3
+
+Deliberately not inferred:
+- numeric enum meanings for game type/outcome/order
+- competition format/admission/timer/status enum meanings
+- encoding semantics for non-empty GetGames name filters
+- FreeVc claim endpoint
+
+Security:
+- no raw capture or account/Steam identifiers are included
+- tests use sanitized synthetic UUID/name fixtures only

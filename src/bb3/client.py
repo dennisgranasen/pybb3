@@ -12,7 +12,13 @@ from .discovery import discover_bb3_endpoint
 from .encoding import b64_decode_text, b64_encode_text
 from .models import (
     CharacteristicRoll,
+    Competition,
+    CompetitionSchedule,
+    CompetitionSetting,
     Formation,
+    GameList,
+    GameResult,
+    MatchStatistics,
     PlayerImprovements,
     RandomSkillResult,
     TeamRoster,
@@ -304,6 +310,269 @@ class BB3Client:
                 f"<Lang>{b64_encode_text('en')}</Lang>"
                 "<IsCrossPlayEnabled>true</IsCrossPlayEnabled>"
             ),
+        )
+
+
+    # ---------- Games / match results ----------
+
+    @staticmethod
+    def _xml_scalar_items(container: str, item: str, values: Iterable[object]) -> str:
+        contents = "".join(f"<{item}>{value}</{item}>" for value in values)
+        return f"<{container}>{contents}</{container}>"
+
+    @staticmethod
+    def _xml_bool_items(container: str, item: str, values: Iterable[bool]) -> str:
+        contents = "".join(
+            f"<{item}>{str(value).lower()}</{item}>" for value in values
+        )
+        return f"<{container}>{contents}</{container}>"
+
+    @staticmethod
+    def _xml_b64_items(container: str, item: str, values: Iterable[str]) -> str:
+        contents = "".join(
+            f"<{item}>{b64_encode_text(value)}</{item}>" for value in values
+        )
+        return f"<{container}>{contents}</{container}>"
+
+    def get_competition_formats(self) -> ET.Element:
+        return self.request(
+            "RequestGetCompetitionFormats",
+            "ResponseGetCompetitionFormats",
+        )
+
+    def get_all_races(self) -> ET.Element:
+        return self.request(
+            "RequestGetAllRaces",
+            "ResponseGetAllRaces",
+        )
+
+    def get_available_get_games_team_values(self) -> ET.Element:
+        return self.request(
+            "RequestGetAvailableGetGamesTeamValues",
+            "ResponseGetAvailableGetGamesTeamValues",
+        )
+
+    def get_games(
+        self,
+        *,
+        size: int = 9,
+        start: int = 0,
+        is_live: Iterable[bool] = (),
+        is_over: Iterable[bool] = (),
+        has_replay: Iterable[bool] = (),
+        league_ids: Iterable[str] = (),
+        competition_ids: Iterable[str] = (),
+        gamer_ids: Iterable[str] = (),
+        team_ids: Iterable[str] = (),
+        max_days_since_game: int = 20000,
+        min_rating: int = 0,
+        max_rating: int = 0,
+        min_team_value: int = 0,
+        max_team_value: int = 0,
+        game_types: Iterable[int] = (),
+        races: Iterable[int] = (),
+        own_races: Iterable[int] = (),
+        opponent_races: Iterable[int] = (),
+        contains_ai: Iterable[bool] = (),
+        outcomes: Iterable[int] = (),
+        order: int = 0,
+        descending: bool = True,
+    ) -> ET.Element:
+        """Query backend games using the capture-verified filter envelope.
+
+        Enum meanings for ``game_types``, ``outcomes`` and ``order`` are
+        intentionally not assigned here. Name filters were only observed empty,
+        so this method does not invent encoding semantics for them.
+        """
+        return self.request(
+            "RequestGetGames",
+            "ResponseGetGames",
+            (
+                f"<Size>{size}</Size><Start>{start}</Start>"
+                f"{self._xml_bool_items('IsLive', 'IsLiveItem', is_live)}"
+                f"{self._xml_bool_items('IsOver', 'IsOverItem', is_over)}"
+                f"{self._xml_bool_items('HasReplay', 'HasReplayItem', has_replay)}"
+                f"{self._xml_b64_items('LeagueIds', 'LeagueIdsItem', league_ids)}"
+                "<LeagueName/>"
+                f"{self._xml_b64_items('CompetitionIds', 'CompetitionIdsItem', competition_ids)}"
+                "<CompetitionName/>"
+                f"{self._xml_b64_items('GamerIds', 'GamerIdsItem', gamer_ids)}"
+                "<GamerName/>"
+                f"{self._xml_b64_items('TeamIds', 'TeamIdsItem', team_ids)}"
+                "<TeamName/>"
+                f"<MaxDaysSinceGame>{max_days_since_game}</MaxDaysSinceGame>"
+                f"<MinRating>{min_rating}</MinRating><MaxRating>{max_rating}</MaxRating>"
+                f"<MinTeamValue>{min_team_value}</MinTeamValue>"
+                f"<MaxTeamValue>{max_team_value}</MaxTeamValue>"
+                f"{self._xml_scalar_items('GameType', 'GameTypeItem', game_types)}"
+                f"{self._xml_scalar_items('Races', 'RacesItem', races)}"
+                f"{self._xml_scalar_items('OwnRaces', 'OwnRacesItem', own_races)}"
+                f"{self._xml_scalar_items('OpponentRaces', 'OpponentRacesItem', opponent_races)}"
+                f"{self._xml_bool_items('ContainsAi', 'ContainsAiItem', contains_ai)}"
+                f"{self._xml_scalar_items('Outcome', 'OutcomeItem', outcomes)}"
+                f"<Order>{order}</Order>"
+                f"<Descending>{str(descending).lower()}</Descending>"
+            ),
+        )
+
+    def get_games_model(self, **kwargs) -> GameList:
+        return GameList.from_response(self.get_games(**kwargs))
+
+    def get_game_result(self, game_id: str) -> ET.Element:
+        return self.request(
+            "RequestGetGameResult",
+            "ResponseGetGameResult",
+            f"<GameId>{b64_encode_text(game_id)}</GameId>",
+        )
+
+    def get_game_result_model(self, game_id: str) -> GameResult:
+        return GameResult.from_response(self.get_game_result(game_id))
+
+    def get_match_statistics(self, match_id: str) -> ET.Element:
+        return self.request(
+            "RequestGetMatchStatistics",
+            "ResponseGetMatchStatistics",
+            f"<MatchId>{b64_encode_text(match_id)}</MatchId>",
+        )
+
+    def get_match_statistics_model(self, match_id: str) -> MatchStatistics:
+        return MatchStatistics.from_response(self.get_match_statistics(match_id))
+
+    def get_spp_result(self, game_id: str) -> ET.Element:
+        return self.request(
+            "RequestGetSppResult",
+            "ResponseGetSppResult",
+            f"<GameId>{b64_encode_text(game_id)}</GameId>",
+        )
+
+    def get_match_dice_rolls(self, match_id: str) -> ET.Element:
+        return self.request(
+            "RequestGetMatchDiceRolls",
+            "ResponseGetMatchDiceRolls",
+            f"<MatchId>{b64_encode_text(match_id)}</MatchId>",
+        )
+
+    def get_battle_pass_game_xp_gain(self, game_id: str) -> ET.Element:
+        return self.request(
+            "RequestGetBattlePassGameXpGain",
+            "ResponseGetBattlePassGameXpGain",
+            f"<GameId>{b64_encode_text(game_id)}</GameId>",
+        )
+
+    # ---------- Competitions ----------
+
+    def get_competition(self, competition_id: str) -> ET.Element:
+        return self.request(
+            "RequestGetCompetition",
+            "ResponseGetCompetition",
+            f"<IdCompetition>{b64_encode_text(competition_id)}</IdCompetition>",
+        )
+
+    def get_competition_model(self, competition_id: str) -> Competition:
+        return Competition.from_response(self.get_competition(competition_id))
+
+    def get_competition_menu(self, competition_id: str) -> ET.Element:
+        return self.request(
+            "RequestGetCompetitionMenu",
+            "ResponseGetCompetitionMenu",
+            f"<CompetitionId>{b64_encode_text(competition_id)}</CompetitionId>",
+        )
+
+    def get_competition_setting(self, setting_id: str) -> ET.Element:
+        return self.request(
+            "RequestGetCompetitionSetting",
+            "ResponseGetCompetitionSetting",
+            f"<SettingId>{b64_encode_text(setting_id)}</SettingId>",
+        )
+
+    def get_competition_setting_model(self, setting_id: str) -> CompetitionSetting:
+        return CompetitionSetting.from_response(self.get_competition_setting(setting_id))
+
+    def get_competition_gamer_ban_duration(
+        self, competition_id: str, gamer_id: str
+    ) -> ET.Element:
+        return self.request(
+            "RequestGetCompetitionGamerBanDuration",
+            "ResponseGetCompetitionGamerBanDuration",
+            f"<CompetitionId>{b64_encode_text(competition_id)}</CompetitionId>"
+            f"<GamerId>{b64_encode_text(gamer_id)}</GamerId>",
+        )
+
+    def get_competition_participants_by_gamer(
+        self, competition_id: str, gamer_id: str
+    ) -> ET.Element:
+        # Capture-observed response name is ResponseGetCompetitionRanking.
+        return self.request(
+            "RequestGetCompetitionParticipantsByGamer",
+            "ResponseGetCompetitionRanking",
+            f"<CompetitionId>{b64_encode_text(competition_id)}</CompetitionId>"
+            f"<GamerId>{b64_encode_text(gamer_id)}</GamerId>",
+        )
+
+    def get_next_match(self, participant_id: str) -> ET.Element:
+        return self.request(
+            "RequestGetNextMatch",
+            "ResponseGetNextMatch",
+            f"<ParticipantId>{b64_encode_text(participant_id)}</ParticipantId>",
+        )
+
+    def get_competition_ranking(
+        self,
+        competition_id: str,
+        *,
+        size: int = 18,
+        start: int = 0,
+        races: Iterable[int] = (),
+    ) -> ET.Element:
+        return self.request(
+            "RequestGetCompetitionRanking",
+            "ResponseGetCompetitionRanking",
+            (
+                f"<Size>{size}</Size><Start>{start}</Start>"
+                f"<IdCompetition>{b64_encode_text(competition_id)}</IdCompetition>"
+                f"{self._xml_scalar_items('Races', 'RacesItem', races)}"
+            ),
+        )
+
+    def get_competition_gamer_registered_teams(
+        self, competition_id: str, gamer_id: str | None = None
+    ) -> ET.Element:
+        gamer_xml = (
+            f"<GamerId>{b64_encode_text(gamer_id)}</GamerId>"
+            if gamer_id
+            else "<GamerId/>"
+        )
+        return self.request(
+            "RequestGetCompetitionGamerRegisteredTeams",
+            "ResponseGetCompetitionGamerRegisteredTeams",
+            gamer_xml
+            + f"<CompetitionId>{b64_encode_text(competition_id)}</CompetitionId>",
+        )
+
+    def get_competition_day(self, competition_id: str) -> int:
+        root = self.request(
+            "RequestGetCompetitionDay",
+            "ResponseGetCompetitionDay",
+            f"<IdCompetition>{b64_encode_text(competition_id)}</IdCompetition>",
+        )
+        value = root.findtext("Value")
+        if value is None:
+            raise BB3RequestError("ResponseGetCompetitionDay contained no Value")
+        return int(value)
+
+    def get_competition_schedule(self, competition_id: str, day: int) -> ET.Element:
+        return self.request(
+            "RequestGetCompetitionSchedule",
+            "ResponseGetCompetitionSchedule",
+            f"<IdCompetition>{b64_encode_text(competition_id)}</IdCompetition>"
+            f"<Day>{day}</Day>",
+        )
+
+    def get_competition_schedule_model(
+        self, competition_id: str, day: int
+    ) -> CompetitionSchedule:
+        return CompetitionSchedule.from_response(
+            self.get_competition_schedule(competition_id, day)
         )
 
     # ---------- Replay ----------

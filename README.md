@@ -6,6 +6,9 @@ on observed traffic from the legitimate game client.
 > Reverse-engineering project. Not affiliated with Cyanide, Nacon,
 > Games Workshop or Valve.
 
+The backend protocol is undocumented and may change without notice.
+Some methods modify live account/team data.
+
 ## Current status
 
 Capture-verified or end-to-end verified:

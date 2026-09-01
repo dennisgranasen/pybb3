@@ -36,13 +36,12 @@ failure. `Exception/Desc` is Base64 in observed server errors.
 **OBSERVED**
 
 An official-client shutdown/logout capture contained no application-level
-logout or disconnect message. The final parsed BB3 messages were an ordinary
-`NotificationKeepAlive` exchange and then the application byte stream ended.
+logout or disconnect request. The final parsed BB3 messages were ordinary
+`NotificationKeepAlive` traffic, after which the application stream ended.
 
-No `RequestLogout` (or equivalent) should be implemented without capture
-evidence. Current pybb3 behavior should close the TCP socket cleanly and release
-the Steam helper. Exact TCP FIN/RST parity and abandoned-session timeout remain
-transport/lifecycle research items.
+Do not invent a `RequestLogout`. Current pybb3 shutdown should close the TCP
+socket and Steam helper. Exact TCP FIN/RST parity and abandoned-session timeout
+remain transport-level research items.
 
 ## Steam AuthToken
 
@@ -231,45 +230,250 @@ If the coach rejects the rolled characteristic options and
 The normal chosen-skill endpoint is already verified; no separate
 primary/secondary request field has been observed.
 
-## League search
+## Games and match results
 
-**OBSERVED**
+### Game search
 
-Captured request:
+**VERIFIED request contract**
+
+`RequestGetGames -> ResponseGetGames` uses a broad filter envelope:
 
 ```xml
-<RequestSearchLeagues>
-  <Token>...</Token>
-  <ShouldCache>false</ShouldCache>
-  <Size>9</Size>
-  <Start>0</Start>
-  <Name/>
-  <GamerId>BASE64(gamer UUID)</GamerId>
-  <IsOfficial>
-    <IsOfficialItem>false</IsOfficialItem>
-  </IsOfficial>
-  <IsGamerMember>
-    <IsGamerMemberItem>true</IsGamerMemberItem>
-  </IsGamerMember>
-  <CanGamerCreateCompetitions/>
-  <HasCompetitions/>
-  <IncludePersonalLeagues>true</IncludePersonalLeagues>
-  <Order>2</Order>
+<RequestGetGames>
+  <Size>...</Size>
+  <Start>...</Start>
+  <IsLive><IsLiveItem>true</IsLiveItem>...</IsLive>
+  <IsOver>...</IsOver>
+  <HasReplay><HasReplayItem>true</HasReplayItem>...</HasReplay>
+  <LeagueIds>...</LeagueIds>
+  <LeagueName/>
+  <CompetitionIds>
+    <CompetitionIdsItem>BASE64(competition UUID)</CompetitionIdsItem>
+  </CompetitionIds>
+  <CompetitionName/>
+  <GamerIds>...</GamerIds>
+  <GamerName/>
+  <TeamIds><TeamIdsItem>BASE64(team UUID)</TeamIdsItem></TeamIds>
+  <TeamName/>
+  <MaxDaysSinceGame>20000</MaxDaysSinceGame>
+  <MinRating>0</MinRating>
+  <MaxRating>0</MaxRating>
+  <MinTeamValue>0</MinTeamValue>
+  <MaxTeamValue>0</MaxTeamValue>
+  <GameType>...</GameType>
+  <Races>...</Races>
+  <OwnRaces>...</OwnRaces>
+  <OpponentRaces>...</OpponentRaces>
+  <ContainsAi>...</ContainsAi>
+  <Outcome>...</Outcome>
+  <Order>0</Order>
   <Descending>true</Descending>
-</RequestSearchLeagues>
+</RequestGetGames>
 ```
 
-Response: `ResponseSearchLeagues`.
+Captured values included `GameType` values `0,1,2,4` and `Outcome` values
+`0,1,2`, but their enum meanings are deliberately **UNKNOWN** here.
 
-Observed `LeagueHeader` data includes league ID/name, creator, `BoardId`,
-`CompetitionSettingId`, `NbCompetition`, `NbMember`, cross-play state and UGC
-identifiers. Exact enum semantics for `Order` are not assigned here.
+`ResponseGetGames` contains `Total` and repeated `Games/GameData` records with,
+among other data, `GameId`, `MatchId`, home/away gamers, teams and scores,
+validation state, pending-validation state and competition data.
 
-## Weekly free Warpstone
+### Game result
+
+**VERIFIED**
+
+```xml
+<RequestGetGameResult>
+  <GameId>BASE64(game UUID)</GameId>
+</RequestGetGameResult>
+```
+
+`ResponseGetGameResult/GameResult` was observed with:
+
+- `GameId`, `MatchId`
+- home/away teams and gamers
+- `HomeScore`, `AwayScore`
+- `HomeValidation`, `AwayValidation`
+- `HomeHasConceded`, `AwayHasConceded`
+- `HasReplay`, `IsLive`, `HasPendingValidation`
+- embedded `Competition`
+- home/away ladder rating/division gains
+- home/away treasury + dedicated-fan result gains
+- MVP and gamer progression XP gain data
+
+### Match statistics
+
+**VERIFIED**
+
+```xml
+<RequestGetMatchStatistics>
+  <MatchId>BASE64(match UUID)</MatchId>
+</RequestGetMatchStatistics>
+```
+
+`ResponseGetMatchStatistics` contains home/away gamer statistics and repeated
+team `Statistic` records. Observed statistic fields are:
+
+- `Id`
+- `CategoryId`
+- `CategoryName` — Base64 text
+- `Name` — Base64 text
+- `Value` — Base64 text
+- `IsHighlight`
+
+Observed labels include touchdowns, casualties, kills, injuries, running and
+passing yards, blocks, fouls and other game statistics. Semantic meaning should
+come from the returned labels rather than a duplicate hardcoded ID map.
+
+### Additional captured match endpoints
+
+**VERIFIED request contracts**
+
+```text
+RequestGetSppResult(GameId) -> ResponseGetSppResult
+RequestGetMatchDiceRolls(MatchId) -> ResponseGetMatchDiceRolls
+RequestGetBattlePassGameXpGain(GameId) -> ResponseGetBattlePassGameXpGain
+RequestGetAvailableGetGamesTeamValues -> ResponseGetAvailableGetGamesTeamValues
+```
+
+The SPP and dice-roll responses are preserved as raw XML by the current client
+until representative structured models are justified.
+
+## Competitions
+
+### Competition
+
+**VERIFIED**
+
+```xml
+<RequestGetCompetition>
+  <IdCompetition>BASE64(competition UUID)</IdCompetition>
+</RequestGetCompetition>
+```
+
+The returned `Competition` contains, among other fields, `Id`, `Name`,
+`SettingId`, `LeagueId`, `Day`, `Format`, `Status`, registration/division flags,
+cross-play state, board/logo/UGC identifiers and creator data.
+
+### Competition setting
+
+**VERIFIED**
+
+```xml
+<RequestGetCompetitionSetting>
+  <SettingId>BASE64(setting UUID)</SettingId>
+</RequestGetCompetitionSetting>
+```
+
+One complete captured `Setting` contained:
+
+```text
+RedraftOnTeamRegistration
+ContestFormat
+BannedSpecialCards
+ContestsRedraftPeriod
+BannedPitches
+AllowApplication
+MaxParticipants
+HasPassword
+AllowParticipantMatchValidation
+AutomaticAdvancement
+AllowTeamCreation
+TimerId
+AllowExperiencedTeams
+AllowCustomTeams
+Format
+RedraftOnCompetitionEnd
+AllowTicketOffer
+EnableRanking
+AccumulateTreasuryForRedraft
+RedraftTreasuryCap
+AdmissionMode
+AllowTicketRequest
+AutomaticValidation
+EnableMatchConsequences
+AllowAiTeams
+```
+
+The numeric enum meanings of `ContestFormat`, `Format`, `TimerId` and
+`AdmissionMode` are not inferred from a single capture.
+
+### Competition day and schedule
+
+**VERIFIED**
+
+```xml
+<RequestGetCompetitionDay>
+  <IdCompetition>BASE64(competition UUID)</IdCompetition>
+</RequestGetCompetitionDay>
+```
+
+The observed response returned `<Value>9</Value>`.
+
+```xml
+<RequestGetCompetitionSchedule>
+  <IdCompetition>BASE64(competition UUID)</IdCompetition>
+  <Day>9</Day>
+</RequestGetCompetitionSchedule>
+```
+
+`ResponseGetCompetitionSchedule` contains:
+
+```text
+Schedule
+  Contest*
+    Matches
+      Match*
+        Status
+        GameId
+        HomeGamer / AwayGamer
+        HomeTeam / AwayTeam
+        HomeScore / AwayScore
+        Id
+    Id
+    Format
+Day
+Competition
+```
+
+The schedule can therefore represent both competition pairings and played
+matches; exact `Status` enum meanings remain unresolved.
+
+### Ranking, participants and next match
+
+**VERIFIED request contracts**
+
+```text
+RequestGetCompetitionRanking(Size, Start, IdCompetition, Races)
+  -> ResponseGetCompetitionRanking
+
+RequestGetCompetitionParticipantsByGamer(CompetitionId, GamerId)
+  -> ResponseGetCompetitionRanking
+
+RequestGetNextMatch(ParticipantId)
+  -> ResponseGetNextMatch
+
+RequestGetCompetitionGamerRegisteredTeams(GamerId, CompetitionId)
+  -> ResponseGetCompetitionGamerRegisteredTeams
+
+RequestGetCompetitionGamerBanDuration(CompetitionId, GamerId)
+  -> ResponseGetCompetitionGamerBanDuration
+
+RequestGetCompetitionMenu(CompetitionId)
+  -> ResponseGetCompetitionMenu
+
+RequestGetCompetitionFormats
+  -> ResponseGetCompetitionFormats
+```
+
+The fact that `RequestGetCompetitionParticipantsByGamer` returns
+`ResponseGetCompetitionRanking` is capture-observed and intentional.
+
+## Account conveniences
+
+### Weekly free Warpstone
 
 **OBSERVED protocol; product semantics confirmed from UI behavior**
-
-Request:
 
 ```xml
 <RequestGetFreeVcData>
@@ -278,68 +482,36 @@ Request:
 </RequestGetFreeVcData>
 ```
 
-Observed response:
+Observed response fields:
 
-```xml
-<ResponseGetFreeVcData>
-  <Token>...</Token>
-  <Result>1</Result>
-  <ShouldCache>0</ShouldCache>
-  <FreeVc>
-    <Retrieved>1</Retrieved>
-    <Amount>10</Amount>
-    <Id>1</Id>
-    <AvailableAt>BASE64(timestamp)</AvailableAt>
-  </FreeVc>
-</ResponseGetFreeVcData>
+```text
+FreeVc/Retrieved
+FreeVc/Amount
+FreeVc/Id
+FreeVc/AvailableAt
 ```
 
-The feature is the weekly free 10-Warpstone reward. `Amount=10` is present on
-the wire. One captured `AvailableAt` decoded to `2026-09-07 14:00:00`.
+The captured response had `Amount=10`; the feature is the weekly free
+10-Warpstone reward. One `AvailableAt` value decoded to
+`2026-09-07 14:00:00`.
 
-`Retrieved` is observed but its exact state semantics should be verified with a
-capture taken while the reward is claimable.
+The actual claim request has not been captured. Do not invent it.
 
-The request that actually claims the reward has not yet been captured. Do not
-invent a claim endpoint.
-
-## Battle-pass and progression reward unlocks
+### Battle-pass / gamer progression rewards
 
 **OBSERVED**
 
-The manager/home capture includes write requests for available rewards:
+`RequestUnlockBattlePassAvailableRewards` and
+`RequestUnlockGamerProgressionAvailableRewards` were observed. These are P3
+convenience candidates, not core team/competition functionality.
 
-```xml
-<RequestUnlockBattlePassAvailableRewards>
-  <Token>...</Token>
-  <ShouldCache>false</ShouldCache>
-  <BattlePassIds>
-    <BattlePassIdsItem>13</BattlePassIdsItem>
-  </BattlePassIds>
-</RequestUnlockBattlePassAvailableRewards>
-```
-
-The observed response was `ResponseUnlockBattlePassAvailableRewards` with
-`Result=1` and an `UnlockedLevels` container.
-
-`RequestUnlockGamerProgressionAvailableRewards` was also observed, but its
-complete request body is not documented here until the relevant capture body is
-reviewed explicitly.
-
-These account-reward endpoints are low-priority conveniences, not core
-team-management protocol.
-
-## Gamer profile cosmetics
+### Gamer profile cosmetics
 
 **OBSERVED**
 
-The capture contains collection tags and setters for manager/gamer profile
-customization including `GamerAvatar`, `GamerBanner`, `GamerFrame`,
-`GamerTitle`, `RequestSetGamerAvatar`, `RequestSetGamerBanner` and
-`RequestSetGamerFrame`.
-
-These are intentionally low priority. Do not conflate manager/gamer cosmetics
-with team cosmetics.
+Gamer avatar/banner/frame/title collection data and avatar/banner/frame setters
+were observed. They are intentionally very low priority and are distinct from
+team cosmetics.
 
 ## Replay
 
