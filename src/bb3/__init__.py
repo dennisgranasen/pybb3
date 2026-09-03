@@ -12,6 +12,7 @@ from .rules import (
     TeamImprovementRule,
     TypedRule,
 )
+from .steam import SteamAuthProcess, SteamAuthState, SteamGuardChallenge, SteamWebAuthFlow
 
 __all__ = [
     "BB3Client",
@@ -35,4 +36,8 @@ __all__ = [
     "RaceRule",
     "SkillRule",
     "TeamImprovementRule",
+    "SteamAuthProcess",
+    "SteamAuthState",
+    "SteamGuardChallenge",
+    "SteamWebAuthFlow",
 ]

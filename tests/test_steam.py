@@ -8,6 +8,8 @@ from bb3.steam import (
     SteamAuthProcess,
     SteamAuthState,
     SteamTicket,
+    SteamGuardChallenge,
+    SteamWebAuthFlow,
     resolve_credentials,
 )
 
@@ -141,3 +143,92 @@ def test_client_cleans_up_helper_when_connect_fails(monkeypatch):
     except OSError:
         pass
     assert auth.closed
+
+
+class WebAuthProcess:
+    def __init__(self, events):
+        self.stdout = io.StringIO("\n".join(json.dumps(event) for event in events) + "\n")
+        self.stderr = io.StringIO()
+        self.stdin = io.StringIO()
+        self.returncode = None
+
+    def poll(self):
+        return self.returncode
+
+    def wait(self, timeout=None):
+        self.returncode = 0
+        return 0
+
+    def kill(self):
+        self.returncode = -9
+
+
+def test_web_auth_flow_returns_challenge_then_isolated_auth_state(monkeypatch):
+    process = WebAuthProcess([
+        {"eventType": "steam_guard_required", "method": "email_code",
+         "email": "d***@example.com", "previousCodeWasIncorrect": False},
+        {"eventType": "auth_state", "username": "dennis",
+         "refreshToken": "refresh", "guardData": "guard"},
+    ])
+    seen = {}
+
+    def popen(command, **kwargs):
+        seen["command"] = command
+        seen["env"] = kwargs["env"]
+        return process
+
+    monkeypatch.setattr("bb3.steam.subprocess.Popen", popen)
+    flow = SteamWebAuthFlow("helper", environ={"SAFE": "value"})
+
+    challenge = flow.start("dennis", "password")
+    assert challenge == SteamGuardChallenge("email_code", "d***@example.com", False)
+    assert seen["command"] == ["helper", "bootstrap-web"]
+    assert "STEAM_USERNAME" not in seen["env"]
+    assert "STEAM_PASSWORD" not in seen["env"]
+
+    state = flow.submit_code(" ABC12 ")
+    assert state == SteamAuthState("dennis", "refresh", "guard")
+    requests = [json.loads(line) for line in process.stdin.getvalue().splitlines()]
+    assert requests == [
+        {"username": "dennis", "password": "password"},
+        {"code": "ABC12"},
+    ]
+    assert flow.process is None
+
+
+def test_web_auth_flows_do_not_share_process_or_challenge(monkeypatch):
+    processes = iter([
+        WebAuthProcess([{"eventType": "steam_guard_required", "method": "device_code"}]),
+        WebAuthProcess([{"eventType": "steam_guard_required", "method": "device_confirmation"}]),
+    ])
+    monkeypatch.setattr("bb3.steam.subprocess.Popen", lambda *args, **kwargs: next(processes))
+
+    first = SteamWebAuthFlow("helper", environ={})
+    second = SteamWebAuthFlow("helper", environ={})
+    assert first.start("first", "secret").method == "device_code"
+    assert second.start("second", "secret").method == "device_confirmation"
+    assert first.process is not second.process
+    assert first.challenge != second.challenge
+    first.close()
+    second.close()
+
+
+def test_auth_process_from_state_uses_no_shared_cache(monkeypatch, tmp_path):
+    process = WebAuthProcess([{"steamId": "1", "authToken": "ticket"}])
+    seen = {}
+
+    def popen(command, **kwargs):
+        seen["env"] = kwargs["env"]
+        return process
+
+    monkeypatch.setattr("bb3.steam.subprocess.Popen", popen)
+    state = SteamAuthState("user", "refresh", "guard")
+    auth = SteamAuthProcess.from_state(state, "helper", environ={})
+    ticket = auth.start()
+
+    assert ticket == SteamTicket("1", "ticket")
+    assert seen["env"]["STEAM_USERNAME"] == "user"
+    assert seen["env"]["STEAM_REFRESH_TOKEN"] == "refresh"
+    assert seen["env"]["STEAM_GUARD_DATA"] == "guard"
+    assert not (tmp_path / "cache").exists()
+    auth.close()

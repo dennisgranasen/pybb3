@@ -62,6 +62,47 @@ with BB3Client.from_steam() as client:
 The ignored Steam auth cache may contain a persistent refresh token. Never
 commit passwords, Guard data, refresh tokens, Steam tickets or BB3 AuthTokens.
 
+### Web and multi-user authentication
+
+Services must keep one `SteamWebAuthFlow` per pending user login. The flow
+starts the Steam helper in JSON-lines mode and returns either a Guard challenge
+or an isolated `SteamAuthState`:
+
+```python
+from bb3 import SteamAuthState, SteamGuardChallenge, SteamWebAuthFlow
+
+flow = SteamWebAuthFlow(helper="/app/steam-helper/BB3SteamAuth")
+result = flow.start(username, password)
+
+if isinstance(result, SteamGuardChallenge):
+    if result.method in {"device_code", "email_code"}:
+        result = flow.submit_code(code_from_user)
+    elif result.method == "device_confirmation":
+        result = flow.confirm_device()
+```
+
+The hosting service owns challenge IDs, user binding, expiry and rate limits.
+Never select a flow using only a caller-supplied token: verify that the
+authenticated application user owns it. Passwords are only needed by
+`SteamWebAuthFlow.start()` and must not be stored or logged. Web credentials
+are sent to the helper over stdin rather than exposed in its process environment.
+
+After authentication, construct a separate ticket process and `BB3Client` for
+each active session without using the shared CLI cache:
+
+```python
+from bb3 import BB3Client, SteamAuthProcess
+
+steam_auth = SteamAuthProcess.from_state(result, helper="/app/steam-helper/BB3SteamAuth")
+client = BB3Client(steam_auth=steam_auth)
+client.__enter__()
+client.login()
+```
+
+`BB3Client` is stateful and not thread-safe. A service must serialize calls for
+each client with a per-session lock or request queue. Different clients may be
+used concurrently. Always close the client on logout, expiry and shutdown.
+
 BB3 AuthToken transformation:
 
 ```text

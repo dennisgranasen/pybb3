@@ -9,13 +9,15 @@ if (args.Length == 0)
 {
     Console.Error.WriteLine("Usage:");
     Console.Error.WriteLine("  BB3SteamAuth bootstrap");
+    Console.Error.WriteLine("  BB3SteamAuth bootstrap-web");
     Console.Error.WriteLine("  BB3SteamAuth ticket");
     return 1;
 }
 
 return args[0].ToLowerInvariant() switch
 {
-    "bootstrap" => await BootstrapAsync(),
+    "bootstrap" => await BootstrapAsync(false),
+    "bootstrap-web" => await BootstrapAsync(true),
     "ticket" => await TicketAsync(),
     _ => Fail("Unknown command. Use bootstrap or ticket.")
 };
@@ -26,17 +28,46 @@ static int Fail(string message)
     return 1;
 }
 
-static async Task<int> BootstrapAsync()
+static async Task<int> BootstrapAsync(bool webMode)
 {
-    var username = Environment.GetEnvironmentVariable("STEAM_USERNAME");
-    var password = Environment.GetEnvironmentVariable("STEAM_PASSWORD");
+    string? username;
+    string? password;
+    string? guardData;
+    if (webMode)
+    {
+        var line = await Console.In.ReadLineAsync();
+        if (line is null)
+            return Fail("Web authentication input was closed before credentials were supplied.");
+        using var credentials = JsonDocument.Parse(line);
+        var root = credentials.RootElement;
+        username = root.TryGetProperty("username", out var usernameValue)
+            ? usernameValue.GetString()
+            : null;
+        password = root.TryGetProperty("password", out var passwordValue)
+            ? passwordValue.GetString()
+            : null;
+        guardData = root.TryGetProperty("guardData", out var guardDataValue)
+            ? guardDataValue.GetString()
+            : null;
+    }
+    else
+    {
+        username = Environment.GetEnvironmentVariable("STEAM_USERNAME");
+        password = Environment.GetEnvironmentVariable("STEAM_PASSWORD");
+        guardData = Environment.GetEnvironmentVariable("STEAM_GUARD_DATA");
+    }
 
     if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
-        return Fail("Set STEAM_USERNAME and STEAM_PASSWORD.");
+        return Fail(webMode
+            ? "Steam username and password are required."
+            : "Set STEAM_USERNAME and STEAM_PASSWORD.");
 
     using var steam = new SteamSession();
     await steam.ConnectAsync();
 
+    IAuthenticator authenticator = webMode
+        ? new JsonLineAuthenticator()
+        : new ConsoleAuthenticator();
     var authSession =
         await steam.Client.Authentication.BeginAuthSessionViaCredentialsAsync(
             new AuthSessionDetails
@@ -44,8 +75,8 @@ static async Task<int> BootstrapAsync()
                 Username = username,
                 Password = password,
                 IsPersistentSession = true,
-                GuardData = Environment.GetEnvironmentVariable("STEAM_GUARD_DATA"),
-                Authenticator = new ConsoleAuthenticator(),
+                GuardData = guardData,
+                Authenticator = authenticator,
             }
         );
 
@@ -54,12 +85,26 @@ static async Task<int> BootstrapAsync()
     if (string.IsNullOrWhiteSpace(poll.RefreshToken))
         throw new InvalidOperationException("No Steam refresh token returned.");
 
-    Console.WriteLine(JsonSerializer.Serialize(new
+    if (webMode)
     {
-        username,
-        refreshToken = poll.RefreshToken,
-        guardData = poll.NewGuardData
-    }));
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            eventType = "auth_state",
+            username,
+            refreshToken = poll.RefreshToken,
+            guardData = poll.NewGuardData
+        }));
+    }
+    else
+    {
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            username,
+            refreshToken = poll.RefreshToken,
+            guardData = poll.NewGuardData
+        }));
+    }
+    Console.Out.Flush();
 
     return 0;
 }
@@ -149,6 +194,75 @@ sealed class ConsoleAuthenticator : IAuthenticator
         Console.Error.WriteLine("Approve the sign-in in Steam Mobile, then press Enter.");
         Console.ReadLine();
         return Task.FromResult(true);
+    }
+}
+
+sealed class JsonLineAuthenticator : IAuthenticator
+{
+    public Task<string> GetDeviceCodeAsync(bool previousCodeWasIncorrect) =>
+        ReadCodeAsync("device_code", null, previousCodeWasIncorrect);
+
+    public Task<string> GetEmailCodeAsync(string email, bool previousCodeWasIncorrect) =>
+        ReadCodeAsync("email_code", email, previousCodeWasIncorrect);
+
+    public async Task<bool> AcceptDeviceConfirmationAsync()
+    {
+        WriteEvent(new
+        {
+            eventType = "steam_guard_required",
+            method = "device_confirmation"
+        });
+        using var response = await ReadResponseAsync();
+        var root = response.RootElement;
+        ThrowIfCancelled(root);
+        return root.TryGetProperty("approved", out var approved) && approved.GetBoolean();
+    }
+
+    private static async Task<string> ReadCodeAsync(
+        string method,
+        string? email,
+        bool previousCodeWasIncorrect)
+    {
+        WriteEvent(new
+        {
+            eventType = "steam_guard_required",
+            method,
+            email,
+            previousCodeWasIncorrect
+        });
+        using var response = await ReadResponseAsync();
+        var root = response.RootElement;
+        ThrowIfCancelled(root);
+        if (!root.TryGetProperty("code", out var code) || string.IsNullOrWhiteSpace(code.GetString()))
+            throw new InvalidOperationException("Steam Guard response did not contain a code.");
+        return code.GetString()!.Trim();
+    }
+
+    private static void WriteEvent(object value)
+    {
+        Console.WriteLine(JsonSerializer.Serialize(value));
+        Console.Out.Flush();
+    }
+
+    private static async Task<JsonDocument> ReadResponseAsync()
+    {
+        var line = await Console.In.ReadLineAsync();
+        if (line is null)
+            throw new OperationCanceledException("Steam authentication input was closed.");
+        try
+        {
+            return JsonDocument.Parse(line);
+        }
+        catch (JsonException error)
+        {
+            throw new InvalidOperationException("Steam authentication response was not valid JSON.", error);
+        }
+    }
+
+    private static void ThrowIfCancelled(JsonElement response)
+    {
+        if (response.TryGetProperty("cancel", out var cancel) && cancel.ValueKind == JsonValueKind.True)
+            throw new OperationCanceledException("Steam authentication was cancelled.");
     }
 }
 
