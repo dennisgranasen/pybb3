@@ -417,6 +417,70 @@ class BB3Client:
             f"<BoardId>{b64_encode_text(board_id)}</BoardId>",
         )
 
+    def get_league_languages(self) -> dict[int, str]:
+        """Return capture-observed league language ids and decoded names."""
+        root = self.request("RequestGetLeagueLangs", "ResponseGetLeagueLangs")
+        result: dict[int, str] = {}
+        for language in root.findall("./Langs/LeagueLang"):
+            language_id = language.findtext("Id")
+            name = language.findtext("Name") or ""
+            if language_id is not None:
+                result[int(language_id)] = b64_decode_text(name) if name else ""
+        return result
+
+    def get_league_password(self, league_id: str) -> str:
+        """Return a league password. Observed on the official client wire."""
+        root = self.request(
+            "RequestGetLeaguePassword",
+            "ResponseGetLeaguePassword",
+            f"<LeagueId>{b64_encode_text(league_id)}</LeagueId>",
+        )
+        value = root.findtext("Password") or ""
+        return b64_decode_text(value) if value else ""
+
+    def set_league_description(self, league_id: str, description: str) -> ET.Element:
+        return self.request(
+            "RequestSetLeagueDescription",
+            "ResponseSetLeagueDescription",
+            f"<LeagueId>{b64_encode_text(league_id)}</LeagueId>"
+            f"<Description>{b64_encode_text(description)}</Description>",
+        )
+
+    def get_league_news(
+        self, league_id: str, *, size: int = 4, start: int = 0
+    ) -> ET.Element:
+        return self.request(
+            "RequestGetLeagueNews",
+            "ResponseGetLeagueNews",
+            f"<Size>{size}</Size><Start>{start}</Start>"
+            f"<LeagueId>{b64_encode_text(league_id)}</LeagueId>",
+        )
+
+    def create_league_news(self, league_id: str, title: str, description: str) -> ET.Element:
+        return self.request(
+            "RequestCreateLeagueNews",
+            "ResponseCreateLeagueNews",
+            f"<LeagueId>{b64_encode_text(league_id)}</LeagueId>"
+            f"<Title>{b64_encode_text(title)}</Title>"
+            f"<Description>{b64_encode_text(description)}</Description>",
+        )
+
+    def update_league_news(self, news_id: str, title: str, description: str) -> ET.Element:
+        return self.request(
+            "RequestUpdateLeagueNews",
+            "ResponseUpdateLeagueNews",
+            f"<NewsId>{b64_encode_text(news_id)}</NewsId>"
+            f"<Title>{b64_encode_text(title)}</Title>"
+            f"<Description>{b64_encode_text(description)}</Description>",
+        )
+
+    def delete_league_news(self, news_id: str) -> ET.Element:
+        return self.request(
+            "RequestDeleteLeagueNews",
+            "ResponseDeleteLeagueNews",
+            f"<NewsId>{b64_encode_text(news_id)}</NewsId>",
+        )
+
     def get_competitions(
         self, *, league_id: str | None = None, gamer_id: str | None = None,
         team_id: str | None = None, name: str | None = None,
@@ -651,6 +715,90 @@ class BB3Client:
             f"<CompetitionId>{b64_encode_text(competition_id)}</CompetitionId>",
         )
 
+    def get_competition_gamer_number(self, competition_id: str) -> tuple[int, int]:
+        """Return ``(gamers, ais)`` for a competition."""
+        root = self.request(
+            "RequestGetCompetitionGamerNumber",
+            "ResponseGetCompetitionGamerNumber",
+            f"<IdCompetition>{b64_encode_text(competition_id)}</IdCompetition>",
+        )
+        value = root.findtext("Value")
+        ais = root.findtext("AIs")
+        if value is None or ais is None:
+            raise BB3RequestError(
+                "ResponseGetCompetitionGamerNumber contained no Value/AIs"
+            )
+        return int(value), int(ais)
+
+    def get_competition_tickets(
+        self,
+        competition_id: str,
+        *,
+        size: int = 15,
+        start: int = 0,
+        ticket_types: Iterable[int] = (1, 0),
+        statuses: Iterable[int] = (0,),
+    ) -> ET.Element:
+        """Get competition tickets using the capture-observed filter envelope.
+
+        The numeric meanings of Type and Status are intentionally left as ints
+        until their labels are independently verified.
+        """
+        return self.request(
+            "RequestGetCompetitionTickets",
+            "ResponseGetCompetitionTickets",
+            f"<Size>{size}</Size><Start>{start}</Start>"
+            f"<CompetitionId>{b64_encode_text(competition_id)}</CompetitionId>"
+            + self._xml_scalar_items("Type", "TypeItem", ticket_types)
+            + self._xml_scalar_items("Status", "StatusItem", statuses),
+        )
+
+    def get_competition_gamer_valid_teams(
+        self,
+        competition_id: str,
+        gamer_id: str,
+        *,
+        size: int = 9,
+        start: int = 0,
+        order: int = 4,
+        descending: bool = True,
+    ) -> ET.Element:
+        """List a gamer's teams with server-side validity for a competition."""
+        return self.request(
+            "RequestGetCompetitionGamerValidTeams",
+            "ResponseGetCompetitionGamerValidTeams",
+            f"<Size>{size}</Size><Start>{start}</Start>"
+            f"<GamerId>{b64_encode_text(gamer_id)}</GamerId>"
+            "<Races/>"
+            f"<Order>{order}</Order>"
+            f"<Descending>{str(descending).lower()}</Descending>"
+            "<Name/><Competing/><IsCustom/><IsTemplate/>"
+            f"<CompetitionId>{b64_encode_text(competition_id)}</CompetitionId>",
+        )
+
+    def join_competition(self, team_id: str, competition_id: str) -> ET.Element:
+        return self.request(
+            "RequestJoinCompetition",
+            "ResponseJoinCompetition",
+            f"<IdTeam>{b64_encode_text(team_id)}</IdTeam>"
+            f"<IdCompetition>{b64_encode_text(competition_id)}</IdCompetition>",
+        )
+
+    def quit_competition(
+        self, participant_id: str, competition_id: str | None = None
+    ) -> ET.Element:
+        competition_xml = (
+            f"<CompetitionId>{b64_encode_text(competition_id)}</CompetitionId>"
+            if competition_id
+            else "<CompetitionId/>"
+        )
+        return self.request(
+            "RequestQuitCompetition",
+            "ResponseQuitCompetition",
+            f"<ParticipantId>{b64_encode_text(participant_id)}</ParticipantId>"
+            + competition_xml,
+        )
+
     def get_competition_password(self, setting_id: str) -> str:
         root = self.request(
             "RequestGetPassword", "ResponseGetPassword",
@@ -658,6 +806,15 @@ class BB3Client:
         )
         value = root.findtext("Password") or ""
         return b64_decode_text(value) if value else ""
+
+    def has_competition_password(self, setting_id: str) -> bool:
+        root = self.request(
+            "RequestHasPassword",
+            "ResponseHasPassword",
+            f"<SettingId>{b64_encode_text(setting_id)}</SettingId>",
+        )
+        value = (root.findtext("Value") or "0").lower()
+        return value in {"1", "true"}
 
     def _set_competition_setting(self, request_name: str, response_name: str,
                                  setting_id: str, field: str, value: object) -> ET.Element:

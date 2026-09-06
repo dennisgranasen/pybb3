@@ -107,6 +107,21 @@
       "Password"
     ]
   },
+  "RequestCreateLeagueNews": {
+    "response": "ResponseCreateLeagueNews",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "LeagueId",
+      "Title",
+      "Description"
+    ],
+    "base64_fields": [
+      "LeagueId",
+      "Title",
+      "Description"
+    ]
+  },
   "RequestCreateTeam": {
     "response": "ResponseCreateTeam",
     "status": "verified",
@@ -123,6 +138,17 @@
       "Name",
       "Motto",
       "TeamRecruitmentId"
+    ]
+  },
+  "RequestDeleteLeagueNews": {
+    "response": "ResponseDeleteLeagueNews",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "NewsId"
+    ],
+    "base64_fields": [
+      "NewsId"
     ]
   },
   "RequestDeleteTeam": {
@@ -276,12 +302,45 @@
       "GamerId"
     ]
   },
+  "RequestGetCompetitionGamerNumber": {
+    "response": "ResponseGetCompetitionGamerNumber",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "IdCompetition"
+    ],
+    "base64_fields": [
+      "IdCompetition"
+    ]
+  },
   "RequestGetCompetitionGamerRegisteredTeams": {
     "response": "ResponseGetCompetitionGamerRegisteredTeams",
     "status": "verified",
     "direction": "client_to_server",
     "body_fields": [
       "GamerId",
+      "CompetitionId"
+    ],
+    "base64_fields": [
+      "GamerId",
+      "CompetitionId"
+    ]
+  },
+  "RequestGetCompetitionGamerValidTeams": {
+    "response": "ResponseGetCompetitionGamerValidTeams",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "Size",
+      "Start",
+      "GamerId",
+      "Races",
+      "Order",
+      "Descending",
+      "Name",
+      "Competing",
+      "IsCustom",
+      "IsTemplate",
       "CompetitionId"
     ],
     "base64_fields": [
@@ -389,6 +448,21 @@
       "Format"
     ],
     "base64_fields": []
+  },
+  "RequestGetCompetitionTickets": {
+    "response": "ResponseGetCompetitionTickets",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "Size",
+      "Start",
+      "CompetitionId",
+      "Type",
+      "Status"
+    ],
+    "base64_fields": [
+      "CompetitionId"
+    ]
   },
   "RequestGetCompetitions": {
     "response": "ResponseGetCompetitions",
@@ -527,6 +601,13 @@
       "LeagueId"
     ]
   },
+  "RequestGetLeagueLangs": {
+    "response": "ResponseGetLeagueLangs",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [],
+    "base64_fields": []
+  },
   "RequestGetLeagueMember": {
     "response": "ResponseGetLeagueMember",
     "status": "verified",
@@ -555,6 +636,30 @@
     "base64_fields": [
       "LeagueId",
       "Name"
+    ]
+  },
+  "RequestGetLeagueNews": {
+    "response": "ResponseGetLeagueNews",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "Size",
+      "Start",
+      "LeagueId"
+    ],
+    "base64_fields": [
+      "LeagueId"
+    ]
+  },
+  "RequestGetLeaguePassword": {
+    "response": "ResponseGetLeaguePassword",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "LeagueId"
+    ],
+    "base64_fields": [
+      "LeagueId"
     ]
   },
   "RequestGetLeagueSetting": {
@@ -736,6 +841,17 @@
     ],
     "base64_fields": []
   },
+  "RequestHasPassword": {
+    "response": "ResponseHasPassword",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "SettingId"
+    ],
+    "base64_fields": [
+      "SettingId"
+    ]
+  },
   "RequestHirePlayerFromPosition": {
     "response": "ResponseHirePlayerFromPosition",
     "status": "verified",
@@ -746,6 +862,19 @@
     ],
     "base64_fields": [
       "TeamId"
+    ]
+  },
+  "RequestJoinCompetition": {
+    "response": "ResponseJoinCompetition",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "IdTeam",
+      "IdCompetition"
+    ],
+    "base64_fields": [
+      "IdTeam",
+      "IdCompetition"
     ]
   },
   "RequestLogin": {
@@ -770,6 +899,19 @@
     "sensitive_fields": [
       "AuthToken",
       "PlatformToken"
+    ]
+  },
+  "RequestQuitCompetition": {
+    "response": "ResponseQuitCompetition",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "ParticipantId",
+      "CompetitionId"
+    ],
+    "base64_fields": [
+      "ParticipantId",
+      "CompetitionId"
     ]
   },
   "RequestRemoveFormations": {
@@ -939,6 +1081,19 @@
     "direction": "client_to_server",
     "body_fields": [],
     "base64_fields": []
+  },
+  "RequestSetLeagueDescription": {
+    "response": "ResponseSetLeagueDescription",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "LeagueId",
+      "Description"
+    ],
+    "base64_fields": [
+      "LeagueId",
+      "Description"
+    ]
   },
   "RequestSetPlayerName": {
     "response": "ResponseSetPlayerName",
@@ -1189,6 +1344,21 @@
     "direction": "client_to_server",
     "body_fields": [],
     "base64_fields": []
+  },
+  "RequestUpdateLeagueNews": {
+    "response": "ResponseUpdateLeagueNews",
+    "status": "verified",
+    "direction": "client_to_server",
+    "body_fields": [
+      "NewsId",
+      "Title",
+      "Description"
+    ],
+    "base64_fields": [
+      "NewsId",
+      "Title",
+      "Description"
+    ]
   },
   "RequestUpdateTeamImprovements": {
     "response": "ResponseUpdateTeamImprovements",
