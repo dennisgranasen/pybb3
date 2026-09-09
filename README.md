@@ -18,6 +18,7 @@ Capture-verified or end-to-end verified:
 - BB3 login
 - dynamic Cyanide backend discovery
 - replay download/decode
+- game listing, structured game results and decoded match statistics
 - team creation, listing and roster retrieval
 - league creation, lookup, members and permissions
 - competition creation, discovery, participants and captured admin settings
@@ -37,20 +38,48 @@ XML alongside structured runtime models.
 
 ## Install
 
+Requires Python 3.11 or newer. Steam authentication uses the included
+SteamKit2 helper, which targets .NET 10; install the .NET 10 SDK to run it
+directly from this checkout. Run the commands below from the `pybb3` directory.
+
+Windows (PowerShell):
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e .
+```
+
+Linux/macOS:
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e .
-pip install -e '.[test]'
-pytest
+python -m pip install -e .
 ```
 
-Live tests require `PYBB3_RUN_LIVE_TESTS=1`. Destructive account mutations must
-also require `PYBB3_ALLOW_DESTRUCTIVE_TESTS=1`.
+For development and offline tests:
+
+```bash
+python -m pip install -e ".[test]"
+python -m pytest
+```
+
+Live tests require `PYBB3_RUN_LIVE_TESTS=1`. Destructive tests additionally
+require `PYBB3_ALLOW_DESTRUCTIVE_TESTS=1`.
 
 ## Steam authentication
 
 BB3 Steam AppID is `1016950`.
+
+From a source checkout, the client automatically runs the helper with
+`dotnet run`. To use a built executable, pass `helper="/path/to/BB3SteamAuth"`
+to `BB3Client.from_steam()` or set `BB3_STEAM_HELPER` to its executable path.
+
+Credentials are resolved from environment variables, then a local `.env`,
+then interactive prompts. Use `.env.example` as a template for
+`STEAM_USERNAME` and optional game-data paths; leave the password unset to
+enter it interactively. Complete any Steam Guard challenge when prompted.
 
 ```python
 from bb3 import BB3Client
@@ -59,8 +88,35 @@ with BB3Client.from_steam() as client:
     client.login()
 ```
 
-The ignored Steam auth cache may contain a persistent refresh token. Never
+The default ignored Steam auth cache, `.bb3-steam-auth.json`, may contain a
+persistent refresh token. Never
 commit passwords, Guard data, refresh tokens, Steam tickets or BB3 AuthTokens.
+
+## Command-line usage
+
+The editable install provides the `bb3` command. Each command authenticates,
+logs in and closes its session on completion.
+
+```bash
+bb3 --help
+bb3 team-get TEAM_ID
+bb3 replay GAME_ID --output replay.xml
+```
+
+The following commands modify the account: creating a team and hiring a player
+using a roster-position ID, respectively.
+
+```bash
+bb3 team-create "My team" --race RACE_ID
+bb3 player-hire TEAM_ID POSITION_ID
+```
+
+Replace uppercase placeholders with actual IDs; race and position IDs must be
+integers. Each subcommand accepts `--helper` for an executable path and
+`--client-version`. `--host` and `--port` are debugging overrides; normal use
+relies on backend discovery. Use `bb3 COMMAND --help` for command options.
+
+## Service integration
 
 ### Web and multi-user authentication
 
@@ -217,11 +273,52 @@ Runtime/backend state and static game rules remain separate layers.
 
 ## Replays
 
+`download_replay()` returns decoded XML bytes:
+
+```python
+from pathlib import Path
+
+with BB3Client.from_steam() as client:
+    client.login()
+    Path("replay.xml").write_bytes(client.download_replay(game_id))
+```
+
+The wire encoding is:
+
 ```text
 ReplayData -> Base64 -> Base64 -> zlib -> XML
 ```
+
+## Games, results and statistics
+
+Within an authenticated client session:
+
+```python
+games = client.get_games_model()
+result = client.get_game_result_model(game_id)
+statistics = client.get_match_statistics_model(match_id)
+schedule = client.get_competition_schedule_model(competition_id, day)
+```
+
+Game IDs and match IDs are distinct endpoint inputs. Structured models preserve
+raw XML, and statistics decode the server-provided category, name and value
+fields. Corresponding methods without `_model` return protocol XML for these
+endpoints. Numeric filter and status values are only named where verified.
+
+## Documentation
+
+- [Protocol reference](docs/PROTOCOL.md): framing and captured request semantics.
+- [Enums](docs/ENUMS.md): verified numeric values and unresolved meanings.
+- [Data sources](docs/DATA_SOURCES.md): local game archives and static rules.
+- [Backlog](BACKLOG.md): implementation status and remaining research.
 
 ## Next protocol targets
 
 The highest-priority remaining captures are redraft and journeymen, followed by
 labels for unresolved competition status, contest-format and timer values.
+
+## Support
+
+If pybb3 is useful to you, you can support its development:
+
+<a href="https://www.buymeacoffee.com/d.rock"><img src="https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee!&amp;emoji=&amp;slug=d.rock&amp;button_colour=40DCA5&amp;font_colour=ffffff&amp;font_family=Bree&amp;outline_colour=000000&amp;coffee_colour=FFDD00" alt="Buy me a coffee!" /></a>
