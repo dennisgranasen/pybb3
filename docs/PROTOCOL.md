@@ -484,7 +484,7 @@ Implemented request families:
 - participant limit, experienced teams, automatic validation, custom teams,
   match consequences, forced/banned pitches and TV min/max mutations
 
-Two response contracts are intentionally asymmetric:
+These response contracts are intentionally asymmetric:
 
 ```text
 RequestGetCompetitionParticipantsByGamer -> ResponseGetCompetitionRanking
@@ -497,6 +497,38 @@ The captured competition-description mutation uses the exact field spelling
 
 All string identifiers and user-facing strings in these bodies are Base64.
 See [`ENUMS.md`](ENUMS.md) for capture-verified numeric meanings.
+
+### Management additions from 2026-09-06
+
+**OBSERVED in the official-client capture and implemented**
+
+See the [capture notes](../CAPTURE_NOTES_20260906.md) for the original
+observations. The current client also exposes:
+
+| Python method | Request-specific fields | Return value |
+| --- | --- | --- |
+| `get_league_languages()` | None (`RequestGetLeagueLangs`) | Dictionary of integer language IDs to decoded names |
+| `get_league_password(league_id)` | `LeagueId` | Decoded password |
+| `set_league_description(league_id, description)` | `LeagueId`, `Description` | Raw response XML |
+| `get_league_news(league_id, size=4, start=0)` | `Size`, `Start`, `LeagueId` | Raw response XML |
+| `create_league_news(league_id, title, description)` | `LeagueId`, `Title`, `Description` | Raw response XML |
+| `update_league_news(news_id, title, description)` | `NewsId`, `Title`, `Description` | Raw response XML |
+| `delete_league_news(news_id)` | `NewsId` | Raw response XML |
+| `get_competition_gamer_number(competition_id)` | `IdCompetition` | `(gamers, ais)` from `Value` and `AIs` |
+| `get_competition_tickets(competition_id)` | `Size`, `Start`, `CompetitionId`, `Type/TypeItem`, `Status/StatusItem` | Raw response XML |
+| `get_competition_gamer_valid_teams(competition_id, gamer_id)` | Team-list filter envelope plus `CompetitionId` | Raw response XML |
+| `join_competition(team_id, competition_id)` | `IdTeam`, `IdCompetition` | Raw response XML |
+| `quit_competition(participant_id, competition_id=None)` | `ParticipantId`, `CompetitionId` | Raw response XML |
+
+Pagination arguments are keyword-only. Ticket queries default to `size=15`,
+`start=0`, `ticket_types=(1, 0)` and `statuses=(0,)`. The response keeps
+`GamerTickets`, `TeamTickets` and `Total` separate; ticket type/status labels
+remain unknown.
+
+Valid-team responses wrap teams with `IsValid`, Base64 `Hints` and `IsFixable`.
+Quitting uses the participant ID, not the team ID, and sends an empty
+`CompetitionId` element by default, matching the capture. Joining, quitting,
+description changes and news create/update/delete modify backend state.
 
 ## Account conveniences
 

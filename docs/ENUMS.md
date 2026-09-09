@@ -70,6 +70,10 @@ observations from the capture.
 
 ## Verified value lists without semantic enum names
 
+The machine-readable [enum catalog](unknown-enums.json) also records values
+outside the Python `IntEnum` classes, including formations and team improvements.
+An entry in that catalog does not imply a corresponding Python enum member.
+
 - `RequestGetCompetitionContestFormats(CompetitionFormat=1)` returned
   `2, 3, 4, 5`; their labels are not known.
 - Team-count choices depend on competition format:
@@ -81,3 +85,10 @@ observations from the capture.
   2500000, 3500000, 5000000`.
 - Redraft treasury-cap choices are 1,000,000 through 1,600,000 in 50,000
   increments; the observed redraft-period range was 0 through 30.
+
+## Additional unresolved values from 2026-09-06
+
+Competition ticket queries used `Type=[1, 0]` and `Status=[0]`. These values
+are implemented as integer filters without inferred labels. League language
+IDs and decoded names can be read with `get_league_languages()`; see the
+[capture notes](../CAPTURE_NOTES_20260906.md) for observed values.

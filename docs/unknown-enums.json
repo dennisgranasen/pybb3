@@ -5,6 +5,8 @@
   "competition_format": {"status": "verified", "values": [{"value": 1, "meaning": "knock_out", "evidence": "observed"}, {"value": 2, "meaning": "round_robin", "evidence": "observed"}, {"value": 3, "meaning": "wissen", "evidence": "observed"}]},
   "competition_status": {"status": "partial", "values": [{"value": 1, "meaning": "created", "evidence": "observed"}], "notes": "Values 2 and 3 were observed as filters but were not labelled."},
   "competition_type": {"status": "unknown", "values": []},
+  "competition_ticket_type": {"status": "unknown", "values": [], "notes": "Type values 1 and 0 were observed in the 2026-09-06 ticket query; labels remain unknown."},
+  "competition_ticket_status": {"status": "unknown", "values": [], "notes": "Status value 0 was observed in the 2026-09-06 ticket query; its label remains unknown."},
   "error_code": {"status": "partial", "values": [{"value": 11, "meaning": "account_already_logged_in", "evidence": "observed"}]},
   "event_id": {"status": "unknown", "values": []},
   "formation_type": {"status": "verified", "values": [{"value": 0, "meaning": "defensive", "evidence": "observed_and_live_verified"}, {"value": 1, "meaning": "offensive", "evidence": "observed_and_live_verified"}]},

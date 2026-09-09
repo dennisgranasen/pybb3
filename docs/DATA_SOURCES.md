@@ -77,3 +77,30 @@ shop/content assets has not been established.
 provides raw table access through `records()`, `by_code()` and `by_name()`, plus
 typed convenience views for positions, races, skills and team improvements.
 Typed views retain their original `RuleRecord`.
+
+### Archive configuration
+
+`BB3Data.from_env()` reads environment variables before the local `.env`.
+Explicit `BB3_RULES_ENGINE_ZIP` and `BB3_DATA_ZIP` values override paths derived
+from `BB3_PATH`. With no configuration it returns `None`; once any location is
+configured, both archives must exist or it raises `BB3DataError`.
+`BB3Data.from_installation(path)` resolves and validates both archives directly.
+These helpers locate files; they do not extract or load rules automatically.
+
+### Loading rules
+
+`BB3Rules.load(path)` reads an extracted modern `BB3Rules.json` file:
+
+```python
+from bb3 import BB3Rules
+
+rules = BB3Rules.load("/path/to/BB3Rules.json")
+skill = rules.skill_by_code(8)
+print(skill.name)
+```
+
+Alternatively, set the environment variable `BB3_RULES_FILE` and call
+`BB3Rules.from_env()`. This method reads only that environment variable,
+does not read `.env` or resolve archives, and returns `None` when unset.
+The loaded rules expose `source_path`, `sha256` and the original `payload`
+for source tracking and raw access.
