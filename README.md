@@ -3,7 +3,7 @@
 Unofficial headless Python client for the Blood Bowl 3 backend protocol, based
 on observed traffic from the legitimate game client.
 
-> Reverse-engineering project. Not affiliated with Cyanide, Nacon,
+> Reverse-engineering project. Not affiliated with Cyanide, Nacon, Slytherine,
 > Games Workshop or Valve.
 
 The backend protocol is undocumented and may change without notice.
