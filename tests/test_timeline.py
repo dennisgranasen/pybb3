@@ -170,3 +170,79 @@ def test_last_player_step_keeps_declared_block_with_its_result():
     assert [event.type for event in timeline.events] == ["block"]
     assert timeline.events[0].details["declared_action"] == "block"
     assert not timeline.unresolved
+
+
+def test_kickoff_deviation_is_classified():
+    step = "<PlayerStep><PlayerId>1</PlayerId><TargetId>-1</TargetId><StepType>10</StepType><CellFrom><X>10</X><Y>7</Y></CellFrom><CellTo><X>12</X><Y>8</Y></CellTo></PlayerStep>"
+    roll = "<ResultRoll><RollType>26</RollType><Dice><Die><Value>3</Value></Die></Dice><Outcome>2</Outcome></ResultRoll>"
+    xml = f"<Replay><Rosters/><ReplayStep>{sequence(message('PlayerStep', step), message('ResultRoll', roll))}</ReplayStep></Replay>".encode()
+
+    timeline = Replay.from_xml(xml).timeline()
+
+    assert timeline.events[0].type == "kickoff_deviation"
+    assert timeline.events[0].details["from"] == {"X": "10", "Y": "7"}
+    assert not timeline.unresolved
+
+
+def test_failed_foul_appearance_prevents_declared_block():
+    step = "<PlayerStep><PlayerId>39</PlayerId><TargetId>4</TargetId><StepType>0</StepType></PlayerStep>"
+    action = "<ResultUseAction><Action>2</Action></ResultUseAction>"
+    roll = "<ResultRoll><Requirement>2</Requirement><Dice><Die><Value>1</Value></Die></Dice><RollType>37</RollType><Outcome>0</Outcome></ResultRoll>"
+    xml = f"<Replay><Rosters/><ReplayStep>{sequence(message('PlayerStep', step), message('ResultUseAction', action), message('ResultRoll', roll))}</ReplayStep></Replay>".encode()
+
+    event = Replay.from_xml(xml).timeline().events[0]
+
+    assert event.type == "block"
+    assert event.actor.id == 39 and event.target.id == 4
+    assert event.outcome == "prevented"
+    assert event.effects[0].type == "foul_appearance"
+    assert event.effects[0].outcome == "failed"
+
+
+def test_failed_animal_savagery_records_selected_teammate_and_damage():
+    step = "<PlayerStep><PlayerId>37</PlayerId><TargetId>1</TargetId><StepType>0</StepType></PlayerStep>"
+    action = "<ResultUseAction><Action>3</Action></ResultUseAction>"
+    savagery = "<ResultRoll><Requirement>4</Requirement><Dice><Die><Value>1</Value></Die></Dice><RollType>36</RollType><Outcome>0</Outcome></ResultRoll>"
+    question = "<QuestionAnimalSavagery><VictimsIds><VictimsIdsItem>46</VictimsIdsItem><VictimsIdsItem>42</VictimsIdsItem></VictimsIds></QuestionAnimalSavagery>"
+    result = "<ResultAnimalSavagery><VictimId>46</VictimId></ResultAnimalSavagery>"
+    armour = "<ResultRoll><Requirement>8</Requirement><Dice><Die><Value>4</Value></Die></Dice><RollType>10</RollType><Outcome>0</Outcome></ResultRoll>"
+    xml = f"<Replay><Rosters/><ReplayStep>{sequence(message('PlayerStep', step), message('ResultUseAction', action), message('ResultRoll', savagery), message('QuestionAnimalSavagery', question), message('ResultAnimalSavagery', result), message('ResultRoll', armour))}</ReplayStep></Replay>".encode()
+
+    event = Replay.from_xml(xml).timeline().events[0]
+
+    assert event.type == "animal_savagery"
+    assert event.actor.id == 37 and event.target.id == 46
+    assert event.outcome == "teammate_hit"
+    assert event.details["declared_action"] == "blitz"
+    assert event.details["action_target"]["id"] == 1
+    assert [x["id"] for x in event.details["eligible_targets"]] == [46, 42]
+    assert [effect.type for effect in event.effects] == ["knockdown", "armour_roll"]
+    assert event.effects[1].outcome is False
+
+
+def test_passed_animal_savagery_has_no_victim():
+    step = "<PlayerStep><PlayerId>37</PlayerId><TargetId>10</TargetId><StepType>0</StepType></PlayerStep>"
+    action = "<ResultUseAction><Action>3</Action></ResultUseAction>"
+    roll = "<ResultRoll><Requirement>4</Requirement><Dice><Die><Value>5</Value></Die></Dice><RollType>36</RollType><Outcome>1</Outcome></ResultRoll>"
+    xml = f"<Replay><Rosters/><ReplayStep>{sequence(message('PlayerStep', step), message('ResultUseAction', action), message('ResultRoll', roll))}</ReplayStep></Replay>".encode()
+
+    event = Replay.from_xml(xml).timeline().events[0]
+
+    assert event.type == "animal_savagery"
+    assert event.outcome == "passed"
+    assert event.target is None
+    assert event.details["action_target"]["id"] == 10
+
+
+def test_passed_animal_savagery_is_attached_to_completed_stand_up():
+    activation = "<PlayerStep><PlayerId>37</PlayerId><TargetId>-1</TargetId><StepType>0</StepType></PlayerStep>"
+    stand_up = "<PlayerStep><PlayerId>37</PlayerId><TargetId>37</TargetId><StepType>7</StepType></PlayerStep>"
+    action = "<ResultUseAction><Action>1</Action></ResultUseAction>"
+    roll = "<ResultRoll><Requirement>4</Requirement><Dice><Die><Value>5</Value></Die></Dice><RollType>36</RollType><Outcome>1</Outcome></ResultRoll>"
+    xml = f"<Replay><Rosters/><ReplayStep>{sequence(message('PlayerStep', activation), message('ResultUseAction', action), message('ResultRoll', roll), message('PlayerStep', stand_up))}</ReplayStep></Replay>".encode()
+
+    event = Replay.from_xml(xml).timeline().events[0]
+
+    assert event.type == "stand_up"
+    assert event.effects[0].type == "animal_savagery"
+    assert event.effects[0].outcome == "passed"

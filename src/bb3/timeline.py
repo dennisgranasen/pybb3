@@ -288,6 +288,54 @@ class _Parser:
             effects.append(TimelineEffect(name, subject, _text(message.node, "Outcome") != "0", _data(message.node)))
         return effects
 
+    def _roll_details(self, message: _Message) -> dict[str, Any]:
+        data = _data(message.node)
+        return data if isinstance(data, dict) else {"value": data}
+
+    def _animal_savagery_event(
+        self, messages: list[_Message], actor: TimelineParticipant | None,
+        action_target: TimelineParticipant | None, clock: int | None,
+        sequences: tuple[int, ...], evidence: dict[str, Any],
+    ) -> TimelineEvent | None:
+        roll = next((x for x in self._find(messages, "ResultRoll")
+                     if _int(_text(x.node, "RollType")) == RollType.ANIMAL_SAVAGERY), None)
+        if roll is None:
+            return None
+        result = self._find(messages, "ResultAnimalSavagery")
+        question = next(iter(self._find(messages, "QuestionAnimalSavagery")), None)
+        victim_id = _int(_text(result[-1].node, "VictimId")) if result else None
+        victim = self._who(victim_id)
+        passed = _text(roll.node, "Outcome") != "0"
+        outcome = "passed" if passed else ("teammate_hit" if victim else "activation_lost")
+        effects: list[TimelineEffect] = []
+        if victim is not None:
+            effects.append(TimelineEffect("knockdown", victim))
+            armour = next((x for x in reversed(self._find(messages, "ResultRoll"))
+                           if _int(_text(x.node, "RollType")) == RollType.ARMOR), None)
+            if armour is not None:
+                effects.append(TimelineEffect(
+                    "armour_roll", victim, _text(armour.node, "Outcome") == "1",
+                    self._roll_details(armour)
+                ))
+            effects.extend(self._damage_effects(messages, victim))
+        eligible: list[TimelineParticipant] = []
+        if question is not None:
+            victims = next((x for x in question.node.iter()
+                            if _name(x) == "VictimsIds"), None)
+            if victims is not None:
+                eligible = [participant for child in victims
+                            if (participant := self._who(_int(child.text))) is not None]
+        evidence.update({
+            "check": self._roll_details(roll),
+            "action_target": asdict(action_target) if action_target else None,
+            "eligible_targets": [asdict(x) for x in eligible],
+        })
+        return self._event(
+            "animal_savagery", clock, actor=actor, target=victim,
+            outcome=outcome, effects=tuple(effects), source_sequences=sequences,
+            details=evidence,
+        )
+
     def _reduce(self, messages: list[_Message]) -> list[TimelineEvent]:
         if not messages:
             return []
@@ -370,6 +418,53 @@ class _Parser:
             return [self._event("move", clock, actor=actor,
                 outcome="failed" if failed else "completed", effects=tuple(effects),
                 source_sequences=sequences, details=evidence)]
+        animal_savagery = self._animal_savagery_event(
+            messages, actor, target, clock, sequences, evidence
+        )
+        if animal_savagery is not None:
+            # If the declared action also completes in this same reduced
+            # sequence (for example standing up), keep that as the primary
+            # event and attach Animal Savagery as its check.
+            if step_code in StepType._value2member_map_ and step_code != StepType.ACTIVATION:
+                check = TimelineEffect(
+                    "animal_savagery", actor, animal_savagery.outcome,
+                    animal_savagery.details.get("check", {})
+                )
+                return [self._event(
+                    StepType(step_code).name.lower(), clock, actor=actor, target=target,
+                    effects=(check, *animal_savagery.effects),
+                    source_sequences=sequences, details=evidence,
+                )]
+            return [animal_savagery]
+        foul_appearance = next((x for x in self._find(messages, "ResultRoll")
+                                if _int(_text(x.node, "RollType")) == RollType.FOUL_APPEARANCE), None)
+        if foul_appearance is not None:
+            passed = _text(foul_appearance.node, "Outcome") != "0"
+            effect_details = self._roll_details(foul_appearance)
+            if target is not None:
+                effect_details["source"] = asdict(target)
+            effect = TimelineEffect(
+                "foul_appearance", actor, "passed" if passed else "failed", effect_details
+            )
+            action = evidence.get("declared_action") or "action"
+            return [self._event(
+                action, clock, actor=actor, target=target,
+                outcome="allowed" if passed else "prevented", effects=(effect,),
+                source_sequences=sequences, details=evidence,
+            )]
+        deviation = next((x for x in self._find(messages, "ResultRoll")
+                          if _int(_text(x.node, "RollType")) == RollType.DEVIATE), None)
+        if deviation is not None and step_code == StepType.KICKOFF:
+            if steps:
+                evidence.update({
+                    "from": _data(_direct(steps[0].node, "CellFrom")),
+                    "to": _data(_direct(steps[-1].node, "CellTo")),
+                    "roll": self._roll_details(deviation),
+                })
+            return [self._event(
+                "kickoff_deviation", clock, actor=self._who(self.active_team_id, True),
+                source_sequences=sequences, details=evidence,
+            )]
         if ball_steps:
             rolls = self._roll_effects(messages, actor)
             roll_names = [effect.type for effect in rolls]

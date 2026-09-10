@@ -62,6 +62,13 @@ Pure movement has no semantic `target`; a target carried by the wire-level
 `PlayerStep` is retained as `details.action_target` for a later block, blitz or
 other declared action.
 
+Kick-off `DEVIATE` rolls are emitted as `kickoff_deviation`. Animal Savagery
+is emitted as `animal_savagery` with outcome `passed`, `teammate_hit`, or
+`activation_lost`; the declared action target, eligible teammates, selected
+victim and resulting armour/injury effects are retained. A failed Foul
+Appearance check emits the declared action (for example `block`) with outcome
+`prevented`, its actor and intended target, and a `foul_appearance` effect.
+
 The state model and replay enum tables are based on observed replays and
 corroborated against the MIT-licensed
 [ZFLStats BloodBowl3 parser](https://github.com/sjogrenm/ZFLStats/tree/main/BloodBowl3).
