@@ -5,6 +5,7 @@ import json
 import socket
 import xml.etree.ElementTree as ET
 from collections import deque
+from pathlib import Path
 from typing import Callable, Iterable
 
 from .constants import DEFAULT_CLIENT_VERSION
@@ -25,7 +26,7 @@ from .models import (
     TeamRoster,
 )
 from .protocol import BB3Frame, BB3ProtocolError, parse_xml, recv_frame, send_frame
-from .replay import decode_replay_data
+from .replay import decode_replay_data, encode_replay_data, replay_xml_to_json
 from .security import redact_text
 
 
@@ -985,9 +986,19 @@ class BB3Client:
     # ---------- Replay ----------
 
     def download_replay(
-        self, game_id: str, *, redact_ip_addresses: bool = True
+        self,
+        game_id: str,
+        *,
+        redact_ip_addresses: bool = True,
+        output_dir: str | Path | None = None,
+        formats: Iterable[str] = ("bbr", "xml", "json"),
     ) -> bytes:
-        """Download decoded replay XML, redacting participant IPs by default."""
+        """Download replay XML and optionally save selected redacted formats.
+
+        The return value remains decoded XML for backwards compatibility. When
+        ``output_dir`` is provided, ``formats`` may contain ``bbr``, ``xml``
+        and/or ``json``. The default saves all three representations.
+        """
         root = self.request(
             "RequestDownloadReplay",
             "ResponseDownloadReplay",
@@ -996,9 +1007,30 @@ class BB3Client:
         replay_data = root.findtext("ReplayData")
         if not replay_data:
             raise BB3RequestError("Replay response contained no ReplayData")
-        return decode_replay_data(
+        replay_xml = decode_replay_data(
             replay_data, redact_ip_addresses=redact_ip_addresses
         )
+        if output_dir is not None:
+            selected = tuple(dict.fromkeys(value.lower() for value in formats))
+            unsupported = set(selected) - {"bbr", "xml", "json"}
+            if unsupported:
+                raise ValueError(
+                    "Unsupported replay format(s): " + ", ".join(sorted(unsupported))
+                )
+            directory = Path(output_dir)
+            directory.mkdir(parents=True, exist_ok=True)
+            stem = directory / game_id
+            if "bbr" in selected:
+                stem.with_suffix(".bbr").write_text(
+                    encode_replay_data(replay_xml), encoding="ascii"
+                )
+            if "xml" in selected:
+                stem.with_suffix(".xml").write_bytes(replay_xml)
+            if "json" in selected:
+                stem.with_suffix(".json").write_text(
+                    replay_xml_to_json(replay_xml) + "\n", encoding="utf-8"
+                )
+        return replay_xml
 
     # ---------- Teams ----------
 

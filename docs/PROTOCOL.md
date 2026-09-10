@@ -590,6 +590,14 @@ each distinct value with a stable RFC 5737 documentation address before
 returning the XML. Redaction is enabled by default and can only be disabled
 explicitly for private diagnostics.
 
+`tools/download_any_replay.py` exercises login, official competition discovery,
+competition-scoped `GetGames`, replay download,
+on-disk verification and XML-to-JSON conversion. `tools/replay_ips.py` accepts
+the decoded `.bbr`, its JSON representation, or stdin and prints only decoded
+IP addresses. The opt-in live test uses the same request path and verifies that
+the saved replay contains only the documentation addresses assigned during
+redaction.
+
 ## Existing verified team operations
 
 - `RequestCreateTeam`

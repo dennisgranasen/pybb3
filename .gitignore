@@ -17,3 +17,4 @@ steam-helper/obj/
 # Proprietary/local BB3 game data
 BB3Rules.json
 bb3rulesengine/
+replays/

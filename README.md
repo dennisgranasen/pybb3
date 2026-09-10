@@ -297,6 +297,40 @@ The wire encoding is:
 ReplayData -> Base64 -> Base64 -> zlib -> XML -> redact IpAddress in memory
 ```
 
+### Live replay smoke script
+
+The script below logs in, searches for any completed game with a replay,
+downloads it with IP redaction enabled, verifies the saved `.bbr`, saves a JSON
+copy and writes the complete JSON to stdout. Progress messages go to stderr, so
+stdout remains pipe-friendly:
+
+```bash
+python tools/download_any_replay.py --output-dir replays
+python tools/download_any_replay.py 2>download.log | jq .
+```
+
+The helper first discovers public official competitions, then searches those
+competitions for a completed match with a replay. Progress is written to stderr,
+while stdout contains only the complete replay JSON and remains safe to pipe.
+
+Extract and Base64-decode only the `IpAddress` values from either saved format:
+
+```bash
+python tools/replay_ips.py replays/GAME_ID.bbr
+python tools/replay_ips.py replays/GAME_ID.json
+cat replays/GAME_ID.json | python tools/replay_ips.py -
+```
+
+Run the read-only live verification explicitly:
+
+```bash
+PYBB3_RUN_LIVE_TESTS=1 pytest -q tests/test_live_replay_redaction.py
+```
+
+The live test downloads a real replay into pytest's temporary directory and
+asserts that every decoded `IpAddress` is one of the RFC 5737 values inserted by
+the in-memory download redaction step.
+
 ## Games, results and statistics
 
 Within an authenticated client session:
