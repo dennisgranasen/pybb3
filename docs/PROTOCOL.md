@@ -581,8 +581,14 @@ team cosmetics.
 `RequestDownloadReplay` uses `GameId` Base64. Replay payload decode:
 
 ```text
-ReplayData -> Base64 -> Base64 -> zlib -> XML
+ReplayData -> Base64 -> Base64 -> zlib -> XML -> redact IpAddress in memory
 ```
+
+`MatchResult/GamerResults/GamerResult/IpAddress` contains a Base64-encoded
+participant IP address in observed replay XML. `download_replay()` replaces
+each distinct value with a stable RFC 5737 documentation address before
+returning the XML. Redaction is enabled by default and can only be disabled
+explicitly for private diagnostics.
 
 ## Existing verified team operations
 

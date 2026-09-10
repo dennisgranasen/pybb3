@@ -984,7 +984,10 @@ class BB3Client:
 
     # ---------- Replay ----------
 
-    def download_replay(self, game_id: str) -> bytes:
+    def download_replay(
+        self, game_id: str, *, redact_ip_addresses: bool = True
+    ) -> bytes:
+        """Download decoded replay XML, redacting participant IPs by default."""
         root = self.request(
             "RequestDownloadReplay",
             "ResponseDownloadReplay",
@@ -993,7 +996,9 @@ class BB3Client:
         replay_data = root.findtext("ReplayData")
         if not replay_data:
             raise BB3RequestError("Replay response contained no ReplayData")
-        return decode_replay_data(replay_data)
+        return decode_replay_data(
+            replay_data, redact_ip_addresses=redact_ip_addresses
+        )
 
     # ---------- Teams ----------
 

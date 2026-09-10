@@ -273,7 +273,9 @@ Runtime/backend state and static game rules remain separate layers.
 
 ## Replays
 
-`download_replay()` returns decoded XML bytes:
+`download_replay()` returns decoded XML bytes. Participant `IpAddress` fields
+are Base64-encoded inside the XML; they are replaced in memory with stable RFC
+5737 documentation addresses (`192.0.2.x`) before the bytes are returned:
 
 ```python
 from pathlib import Path
@@ -283,10 +285,16 @@ with BB3Client.from_steam() as client:
     Path("replay.xml").write_bytes(client.download_replay(game_id))
 ```
 
+Distinct source addresses remain distinguishable within one replay, but the
+temporary mapping and original values are not retained. For private diagnostic
+use only, redaction can be explicitly disabled with
+`download_replay(game_id, redact_ip_addresses=False)` or the CLI flag
+`--keep-ip-addresses`.
+
 The wire encoding is:
 
 ```text
-ReplayData -> Base64 -> Base64 -> zlib -> XML
+ReplayData -> Base64 -> Base64 -> zlib -> XML -> redact IpAddress in memory
 ```
 
 ## Games, results and statistics

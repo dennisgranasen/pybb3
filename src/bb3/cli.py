@@ -36,7 +36,10 @@ def authenticated_client(args):
 def cmd_replay(args) -> int:
     client = authenticated_client(args)
     try:
-        xml = client.download_replay(args.game_id)
+        xml = client.download_replay(
+            args.game_id,
+            redact_ip_addresses=not args.keep_ip_addresses,
+        )
         Path(args.output).write_bytes(xml)
         print(args.output)
         return 0
@@ -85,6 +88,11 @@ def main() -> int:
     replay = sub.add_parser("replay")
     replay.add_argument("game_id")
     replay.add_argument("--output", default="replay.xml")
+    replay.add_argument(
+        "--keep-ip-addresses",
+        action="store_true",
+        help="preserve sensitive participant IP addresses in replay XML",
+    )
     add_connection_args(replay)
     replay.set_defaults(func=cmd_replay)
 
