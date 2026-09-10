@@ -5,7 +5,6 @@ import json
 import socket
 import xml.etree.ElementTree as ET
 from collections import deque
-from pathlib import Path
 from typing import Callable, Iterable
 
 from .constants import DEFAULT_CLIENT_VERSION
@@ -26,7 +25,7 @@ from .models import (
     TeamRoster,
 )
 from .protocol import BB3Frame, BB3ProtocolError, parse_xml, recv_frame, send_frame
-from .replay import decode_replay_data, encode_replay_data, replay_xml_to_json
+from .replay import Replay
 from .security import redact_text
 
 
@@ -49,6 +48,10 @@ class BB3RequestError(BB3ProtocolError):
         self.message_name = message_name
         self.raw_response = raw_response
         self.frame = frame
+
+
+class ReplayNotFoundError(BB3RequestError):
+    """The requested game has no downloadable replay."""
 
 
 class BB3Client:
@@ -986,19 +989,9 @@ class BB3Client:
     # ---------- Replay ----------
 
     def download_replay(
-        self,
-        game_id: str,
-        *,
-        redact_ip_addresses: bool = True,
-        output_dir: str | Path | None = None,
-        formats: Iterable[str] = ("bbr", "xml", "json"),
-    ) -> bytes:
-        """Download replay XML and optionally save selected redacted formats.
-
-        The return value remains decoded XML for backwards compatibility. When
-        ``output_dir`` is provided, ``formats`` may contain ``bbr``, ``xml``
-        and/or ``json``. The default saves all three representations.
-        """
+        self, game_id: str
+    ) -> Replay:
+        """Download a replay backed by the untouched Base64 server payload."""
         root = self.request(
             "RequestDownloadReplay",
             "ResponseDownloadReplay",
@@ -1006,31 +999,49 @@ class BB3Client:
         )
         replay_data = root.findtext("ReplayData")
         if not replay_data:
-            raise BB3RequestError("Replay response contained no ReplayData")
-        replay_xml = decode_replay_data(
-            replay_data, redact_ip_addresses=redact_ip_addresses
+            raise ReplayNotFoundError(
+                "Replay response contained no ReplayData",
+                message_name="ResponseDownloadReplay",
+                raw_response=ET.tostring(root, encoding="unicode"),
+            )
+        return Replay.from_bbr(replay_data)
+
+    def list_official_competitions(self, *, limit: int = 100) -> tuple[tuple[str, str], ...]:
+        """Return ``(name, id)`` pairs for public official competitions."""
+        root = self.get_competitions(
+            size=limit, start=0, is_official=[True], descending=True
         )
-        if output_dir is not None:
-            selected = tuple(dict.fromkeys(value.lower() for value in formats))
-            unsupported = set(selected) - {"bbr", "xml", "json"}
-            if unsupported:
-                raise ValueError(
-                    "Unsupported replay format(s): " + ", ".join(sorted(unsupported))
-                )
-            directory = Path(output_dir)
-            directory.mkdir(parents=True, exist_ok=True)
-            stem = directory / game_id
-            if "bbr" in selected:
-                stem.with_suffix(".bbr").write_text(
-                    encode_replay_data(replay_xml), encoding="ascii"
-                )
-            if "xml" in selected:
-                stem.with_suffix(".xml").write_bytes(replay_xml)
-            if "json" in selected:
-                stem.with_suffix(".json").write_text(
-                    replay_xml_to_json(replay_xml) + "\n", encoding="utf-8"
-                )
-        return replay_xml
+        result = []
+        for competition in root.findall(".//Competition"):
+            encoded_id = competition.findtext("Id")
+            encoded_name = competition.findtext("Name")
+            if encoded_id:
+                result.append((
+                    b64_decode_text(encoded_name) if encoded_name else "",
+                    b64_decode_text(encoded_id),
+                ))
+        return tuple(result)
+
+    def list_matches(
+        self,
+        competition_id: str,
+        *,
+        limit: int = 10,
+        start: int = 0,
+        completed: bool | None = None,
+        has_replay: bool | None = None,
+    ) -> tuple:
+        """Return the latest matches in a competition, newest first."""
+        if limit < 1:
+            raise ValueError("limit must be at least 1")
+        return self.get_games_model(
+            size=limit,
+            start=start,
+            competition_ids=[competition_id],
+            is_over=[] if completed is None else [completed],
+            has_replay=[] if has_replay is None else [has_replay],
+            descending=True,
+        ).games
 
     # ---------- Teams ----------
 

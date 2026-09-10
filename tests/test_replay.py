@@ -59,8 +59,8 @@ def test_redaction_handles_namespaced_ip_address_elements():
     assert base64.b64decode(address.text).decode() == "192.0.2.1"
 
 
-def test_download_replay_forwards_explicit_redaction_choice(monkeypatch):
-    replay_data = base64.b64encode(b"wire payload").decode()
+def test_download_replay_returns_untouched_bbr_payload(monkeypatch):
+    replay_data = "dW50b3VjaGVkLWJicg=="
     client = BB3Client(host="example.invalid", port=1)
     monkeypatch.setattr(
         client,
@@ -70,17 +70,7 @@ def test_download_replay_forwards_explicit_redaction_choice(monkeypatch):
             "</ResponseDownloadReplay>"
         ),
     )
-    seen = {}
-
-    def fake_decode(value, *, redact_ip_addresses=True):
-        seen["value"] = value
-        seen["redact"] = redact_ip_addresses
-        return b"<Replay/>"
-
-    monkeypatch.setattr("bb3.client.decode_replay_data", fake_decode)
-
-    assert client.download_replay("game", redact_ip_addresses=False) == b"<Replay/>"
-    assert seen == {"value": replay_data, "redact": False}
+    assert client.download_replay("game").bbr_data == replay_data
 
 
 def test_replay_json_conversion_preserves_repeated_elements_and_ip_values():

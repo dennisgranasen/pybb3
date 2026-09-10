@@ -1,4 +1,4 @@
-from .client import BB3Client, BB3RequestError
+from .client import BB3Client, BB3RequestError, ReplayNotFoundError
 from .data import BB3Data, BB3DataError
 from .discovery import BB3DiscoveryError, BB3Endpoint, discover_bb3_endpoint
 from .enums import AdmissionMode, BoardPermission, CompetitionFormat, CompetitionStatus, LeagueRole, TimerId
@@ -12,11 +12,14 @@ from .rules import (
     TeamImprovementRule,
     TypedRule,
 )
+from .replay import Replay
 from .steam import SteamAuthProcess, SteamAuthState, SteamGuardChallenge, SteamWebAuthFlow
 
 __all__ = [
     "BB3Client",
     "BB3RequestError",
+    "ReplayNotFoundError",
+    "Replay",
     "BB3Data",
     "BB3DataError",
     "BB3DiscoveryError",

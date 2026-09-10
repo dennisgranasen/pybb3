@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from bb3.replay import (
-    decode_replay_data,
+    decode_replay,
     extract_ip_addresses_from_data,
     extract_replay_ip_addresses,
 )
@@ -28,9 +28,7 @@ def main() -> int:
     if stripped.startswith((b"{", b"[")):
         addresses = extract_ip_addresses_from_data(json.loads(raw))
     else:
-        replay_xml = raw if stripped.startswith(b"<") else decode_replay_data(
-            raw.decode("ascii"), redact_ip_addresses=False
-        )
+        replay_xml = raw if stripped.startswith(b"<") else decode_replay(raw)
         addresses = extract_replay_ip_addresses(replay_xml)
     for address in addresses:
         print(address)
