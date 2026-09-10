@@ -92,3 +92,32 @@ Competition ticket queries used `Type=[1, 0]` and `Status=[0]`. These values
 are implemented as integer filters without inferred labels. League language
 IDs and decoded names can be read with `get_league_languages()`; see the
 [capture notes](../CAPTURE_NOTES_20260906.md) for observed values.
+
+## Replay enums
+
+The replay parser also exposes enums corroborated by the independent
+[ZFLStats BloodBowl3 parser](https://github.com/sjogrenm/ZFLStats/tree/main/BloodBowl3).
+Unlike the league API enums above, these are derived from replay structures.
+
+### Block outcome
+
+| Value | Python name |
+| ---: | --- |
+| 0 | `BlockOutcome.ATTACKER_DOWN` |
+| 1 | `BlockOutcome.BOTH_DOWN` |
+| 2 | `BlockOutcome.BOTH_WRESTLE_DOWN` |
+| 3 | `BlockOutcome.BOTH_STANDING` |
+| 4 | `BlockOutcome.PUSHED` |
+| 5 | `BlockOutcome.DEFENDER_DOWN` |
+| 6 | `BlockOutcome.DEFENDER_PUSHED_DOWN` |
+
+`InjuryOutcome` maps 0–4 to stunned, reserve, KO, badly hurt and casualty.
+`CasualtyOutcome` maps 0–10 from no casualty through badly/seriously hurt,
+lasting stat injuries and dead. `PlayerSituation` and `PlayerStatus` describe
+where a removed player went and their resulting state.
+
+`StepType` identifies activation, movement, damage, ball, catch, handoff,
+block, stand-up, foul, kickoff, pass and special actions. `SequenceType`
+identifies the declared action (move, block, blitz, pass, handoff, foul and
+others), while `RollType` identifies the roll being resolved. These distinctions
+are essential when several low-level messages form one timeline event.

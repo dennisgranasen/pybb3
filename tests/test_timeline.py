@@ -1,0 +1,172 @@
+import base64
+
+from bb3.replay import Replay
+
+
+def b64(value: str) -> str:
+    return base64.b64encode(value.encode()).decode()
+
+
+def message(name: str, xml: str) -> str:
+    return f"<StringMessage><Name>{b64(name)}</Name><MessageData>{b64(b64(xml))}</MessageData></StringMessage>"
+
+
+def sequence(*messages: str) -> str:
+    return "<EventExecuteSequence><Sequence><StepResult><Results>" + "".join(messages) + "</Results></StepResult></Sequence></EventExecuteSequence>"
+
+
+def test_multisequence_block_becomes_one_actor_target_event(tmp_path):
+    step = "<PlayerStep><PlayerId>1</PlayerId><TargetId>2</TargetId><StepType>6</StepType></PlayerStep>"
+    block = "<ResultBlockOutcome><AttackerId>1</AttackerId><DefenderId>2</DefenderId><Outcome>6</Outcome></ResultBlockOutcome>"
+    push = "<ResultPushBack><PushedPlayerId>2</PushedPlayerId><CellFrom><X>2</X></CellFrom><CellTo><X>3</X></CellTo></ResultPushBack>"
+    armour = "<ResultRoll><RollType>10</RollType><Outcome>1</Outcome></ResultRoll>"
+    injury = "<ResultInjuryRoll><RollType>11</RollType><Outcome>0</Outcome></ResultInjuryRoll>"
+    xml = f"""<Replay><Rosters>
+      <TeamRoster><Players><PlayerData><Name>{b64('Ada')}</Name><Id>1</Id></PlayerData></Players><Name>{b64('Home')}</Name><Team><TeamId>0</TeamId></Team></TeamRoster>
+      <TeamRoster><Players><PlayerData><Name>{b64('Bob')}</Name><Id>2</Id></PlayerData></Players><Name>{b64('Away')}</Name><Team><TeamId>1</TeamId></Team></TeamRoster>
+    </Rosters><ReplayStep><Clock>40</Clock>{sequence(message('PlayerStep', step), message('QuestionBlockDice', '<QuestionBlockDice/>'))}</ReplayStep>
+    <ReplayStep><Clock>42</Clock>{sequence(message('PlayerStep', step), message('ResultPushBack', push), message('ResultBlockOutcome', block), message('ResultRoll', armour), message('ResultInjuryRoll', injury))}
+    <EventEndTurn><Reason>2</Reason></EventEndTurn><BoardState><ActiveTeam>0</ActiveTeam></BoardState></ReplayStep>
+    <EndGame><Score>1</Score></EndGame></Replay>""".encode()
+
+    timeline = Replay.from_xml(xml).timeline()
+    blocks = [event for event in timeline.events if event.type == "block"]
+    assert len(blocks) == 1
+    event = blocks[0]
+    assert event.actor.name == "Ada"
+    assert event.target.name == "Bob"
+    assert event.outcome == "defender_pushed_down"
+    assert event.source_sequences == (1, 2)
+    assert [effect.type for effect in event.effects] == ["push", "knockdown", "armour_roll", "injury"]
+    assert all(effect.subject.name == "Bob" for effect in event.effects)
+    assert event.effects[2].outcome is True
+    assert timeline.before_match["teams"][0]["name"] == "Home"
+    assert timeline.after_match["Score"] == "1"
+    assert timeline.save(tmp_path / "timeline.json").is_file()
+
+
+def test_failed_move_assigns_injury_to_moving_player():
+    step = "<PlayerStep><PlayerId>7</PlayerId><TargetId>-1</TargetId><StepType>1</StepType><CellFrom><X>1</X></CellFrom><CellTo><X>2</X></CellTo></PlayerStep>"
+    move = "<ResultMoveOutcome><Moved>1</Moved></ResultMoveOutcome>"
+    injury = "<ResultInjuryRoll><Outcome>0</Outcome></ResultInjuryRoll>"
+    xml = f"<Replay><Rosters/><ReplayStep>{sequence(message('PlayerStep', step), message('ResultMoveOutcome', move), message('ResultInjuryRoll', injury))}</ReplayStep></Replay>".encode()
+    event = Replay.from_xml(xml).timeline().events[0]
+    assert event.type == "move"
+    assert event.actor.id == 7
+    assert event.target is None
+    assert event.outcome == "failed"
+    assert event.effects[0].type == "injury"
+    assert event.effects[0].subject.id == 7
+
+
+def test_all_block_outcomes_are_named():
+    expected = ["attacker_down", "both_down", "both_wrestle_down", "both_standing",
+                "pushed", "defender_down", "defender_pushed_down"]
+    for code, name in enumerate(expected):
+        block = f"<ResultBlockOutcome><AttackerId>1</AttackerId><DefenderId>2</DefenderId><Outcome>{code}</Outcome></ResultBlockOutcome>"
+        xml = f"<Replay><Rosters/><ReplayStep>{sequence(message('ResultBlockOutcome', block))}</ReplayStep></Replay>".encode()
+        assert Replay.from_xml(xml).timeline().events[0].outcome == name
+
+
+def test_wizard_damage_is_linked_to_special_card():
+    fireball = "<EventUseSpecialCard><GamerId>0</GamerId><CardId>253</CardId></EventUseSpecialCard>"
+    damage = "<ResultPlayerRemoval><PlayerId>9</PlayerId><Situation>2</Situation><Status>3</Status></ResultPlayerRemoval>"
+    xml = f"<Replay><Rosters/><ReplayStep>{fireball}{sequence(message('ResultPlayerRemoval', damage))}</ReplayStep></Replay>".encode()
+    events = Replay.from_xml(xml).timeline().events
+    assert events[0].type == "special_card"
+    assert events[0].outcome == "fireball"
+    assert events[1].type == "damage"
+    assert events[1].caused_by == events[0].id
+    assert events[1].effects[0].outcome == "ko"
+
+
+def test_board_state_tracks_ball_possession_changes():
+    xml = b"""<Replay><Rosters/>
+      <ReplayStep><BoardState><Ball><IsHeld>1</IsHeld><Carrier>4</Carrier></Ball></BoardState></ReplayStep>
+      <ReplayStep><BoardState><Ball><IsHeld>0</IsHeld></Ball></BoardState></ReplayStep>
+    </Replay>"""
+    events = Replay.from_xml(xml).timeline().events
+    assert [event.type for event in events] == ["possession_gained", "ball_loose"]
+    assert events[1].target.id == 4
+
+
+def test_empty_active_team_means_zero_and_turn_metadata_comes_from_board():
+    end = "<EventEndTurn><Reason>1</Reason></EventEndTurn>"
+    board = """<BoardState><ActiveTeam/><ListTeams>
+      <TeamState><GameTurn>9</GameTurn></TeamState>
+      <TeamState><GameTurn>8</GameTurn></TeamState>
+    </ListTeams></BoardState>"""
+    playing = "<EventNewGamePhase><Phase>5</Phase></EventNewGamePhase>"
+    active = "<EventActiveGamerChanged/>"
+    xml = f"<Replay><Rosters/><ReplayStep>{playing}{active}{end}{board}</ReplayStep></Replay>".encode()
+
+    turn = Replay.from_xml(xml).timeline().turns[0]
+
+    assert turn.team_id == 0
+    assert turn.half == 2
+    assert turn.team_turn == 1
+
+
+def test_setup_turn_does_not_leak_into_next_playing_turn():
+    setup_end = "<EventEndTurn><Reason>1</Reason><FinishingTurnType>5</FinishingTurnType></EventEndTurn>"
+    play_end = "<EventEndTurn><Reason>1</Reason></EventEndTurn>"
+    board = """<BoardState><ActiveTeam/><ListTeams>
+      <TeamState><GameTurn>1</GameTurn></TeamState><TeamState><GameTurn/></TeamState>
+    </ListTeams></BoardState>"""
+    playing = "<EventNewGamePhase><Phase>5</Phase></EventNewGamePhase>"
+    active = "<EventActiveGamerChanged/>"
+    xml = f"""<Replay><Rosters/>
+      <ReplayStep>{playing}{active}<EventMatchStart/>{setup_end}{board}</ReplayStep>
+      <ReplayStep>{play_end}{board}</ReplayStep>
+    </Replay>""".encode()
+
+    timeline = Replay.from_xml(xml).timeline()
+
+    assert len(timeline.turns) == 1
+    assert [event.type for event in timeline.turns[0].events] == ["turn_end"]
+    assert any(event.type == "match_start" for event in timeline.events)
+
+
+def test_match_end_transition_closes_last_turn_without_trailing_context_turn():
+    active = "<EventActiveGamerChanged><NewActiveGamer>1</NewActiveGamer></EventActiveGamerChanged>"
+    end = "<EventEndTurn><Reason>1</Reason><FollowingTurnType>2</FollowingTurnType></EventEndTurn>"
+    board = """<BoardState><ActiveTeam>1</ActiveTeam><ListTeams>
+      <TeamState><GameTurn>16</GameTurn></TeamState><TeamState><GameTurn>17</GameTurn></TeamState>
+    </ListTeams></BoardState>"""
+    phase = "<EventNewGamePhase><Phase>6</Phase></EventNewGamePhase>"
+    xml = f"<Replay><Rosters/><ReplayStep>{active}{end}{phase}<EventMatchEnd/>{board}</ReplayStep></Replay>".encode()
+
+    timeline = Replay.from_xml(xml).timeline()
+
+    assert len(timeline.turns) == 1
+    assert timeline.turns[0].team_id == 1
+    assert [event.type for event in timeline.turns[0].events] == ["turn_end"]
+    assert [event.type for event in timeline.events] == ["turn_end", "new_game_phase", "match_end"]
+
+
+def test_move_keeps_action_target_as_evidence_not_recipient():
+    step = "<PlayerStep><PlayerId>1</PlayerId><TargetId>2</TargetId><StepType>1</StepType></PlayerStep>"
+    move = "<ResultMoveOutcome><Moved>1</Moved></ResultMoveOutcome>"
+    xml = f"<Replay><Rosters/><ReplayStep>{sequence(message('PlayerStep', step), message('ResultMoveOutcome', move))}</ReplayStep></Replay>".encode()
+
+    event = Replay.from_xml(xml).timeline().events[0]
+
+    assert event.target is None
+    assert event.details["action_target"]["id"] == 2
+
+
+def test_last_player_step_keeps_declared_block_with_its_result():
+    activation = "<PlayerStep><PlayerId>1</PlayerId><TargetId>-1</TargetId><StepType>0</StepType></PlayerStep>"
+    block_step = "<PlayerStep><PlayerId>1</PlayerId><TargetId>2</TargetId><StepType>6</StepType></PlayerStep>"
+    action = "<ResultUseAction><Action>2</Action><TeamId>0</TeamId></ResultUseAction>"
+    outcome = "<ResultBlockOutcome><AttackerId>1</AttackerId><DefenderId>2</DefenderId><Outcome>5</Outcome></ResultBlockOutcome>"
+    xml = f"""<Replay><Rosters/><ReplayStep>
+      {sequence(message('PlayerStep', activation), message('ResultUseAction', action), message('PlayerStep', block_step))}
+      {sequence(message('PlayerStep', block_step), message('ResultBlockOutcome', outcome))}
+    </ReplayStep></Replay>""".encode()
+
+    timeline = Replay.from_xml(xml).timeline()
+
+    assert [event.type for event in timeline.events] == ["block"]
+    assert timeline.events[0].details["declared_action"] == "block"
+    assert not timeline.unresolved

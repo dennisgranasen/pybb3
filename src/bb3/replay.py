@@ -313,3 +313,9 @@ class Replay:
     def save(self, filename: str | Path) -> Path:
         """Save in the representation selected by the filename suffix."""
         return save_replay(self, filename)
+
+    def timeline(self):
+        """Parse the replay into a structured, JSON-serializable match timeline."""
+        from .timeline import ReplayTimeline
+
+        return ReplayTimeline.from_xml(self.xml_data)

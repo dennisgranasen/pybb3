@@ -1,0 +1,73 @@
+# Replay timeline
+
+`Replay.timeline()` interprets protocol messages in order and combines them
+into match-domain events. The output is intended for statistics, match reports
+and UI use; it is not merely a renamed dump of the replay XML.
+
+```python
+from bb3.replay import Replay
+
+timeline = Replay.from_bbr(open("match.bbr", "rb").read()).timeline()
+timeline.save("match.timeline.json")
+```
+
+The top-level object contains `before_match`, `turns`, `after_match`, and the
+flat `events` list. Each playable team turn carries its global ordinal,
+`team_id`, `half`, drive number and `team_turn` (1--8 within the half). Setup
+and kick-off sequences remain available in the flat list but are not mixed
+into the following playable turn. A core event identifies who acted and who
+was affected:
+
+```json
+{
+  "type": "block",
+  "actor": {"kind": "player", "id": 40, "name": "Attacker", "team_id": 1},
+  "target": {"kind": "player", "id": 11, "name": "Defender", "team_id": 0},
+  "outcome": "defender_down",
+  "effects": [
+    {"type": "push", "subject": {"id": 11}},
+    {"type": "knockdown", "subject": {"id": 11}},
+    {"type": "armour_roll", "subject": {"id": 11}, "outcome": true},
+    {"type": "injury", "subject": {"id": 11}, "outcome": "stunned"}
+  ],
+  "source_sequences": [21, 22, 23]
+}
+```
+
+A block can span several `EventExecuteSequence` elements. The parser carries
+the active player and target forward until the outcome, push, armour and injury
+messages have arrived. Those low-level decoded messages remain under
+`details.messages` as evidence and for future enum research.
+
+Currently reduced core events include movement/falls, blocks and their effects,
+pass/catch/handoff/interception/foul actions identified by `StepType`,
+kick-off/weather events, turn endings and concessions. Unsupported protocol
+messages are retained when they form part of a core event but are not emitted
+as noisy standalone timeline entries.
+
+## Stateful cause tracking and fallback
+
+The parser keeps the active team/player, declared `SequenceType`, active special
+card and current ball carrier while consuming replay steps in order. This lets
+damage after a foul, crowd surf, wizard or other multi-step action retain its
+cause. Special-card consequences use `caused_by` to refer to the corresponding
+`special_card` event.
+
+Changes to `BoardState/Ball` produce `possession_gained`, `ball_loose` or
+`possession_changed`. Every known `StepType` has a semantic fallback, so newer
+skills and special actions still identify actor and target. Relevant unknown
+result messages become `unclassified` events with their complete decoded
+evidence and are counted in `unresolved`; they are never silently discarded.
+Pure movement has no semantic `target`; a target carried by the wire-level
+`PlayerStep` is retained as `details.action_target` for a later block, blitz or
+other declared action.
+
+The state model and replay enum tables are based on observed replays and
+corroborated against the MIT-licensed
+[ZFLStats BloodBowl3 parser](https://github.com/sjogrenm/ZFLStats/tree/main/BloodBowl3).
+
+Run the converter with:
+
+```console
+python tools/replay_timeline.py match.bbr -o match.timeline.json
+```
