@@ -307,3 +307,35 @@ def test_narrative_export_options_restore_moves_and_evidence():
 
     assert event["type"] == "move"
     assert event["details"]["messages"][0]["type"] == "PlayerStep"
+
+
+def test_narrative_checks_name_roll_purpose_and_preserve_team_reroll_chain():
+    step = "<PlayerStep><PlayerId>40</PlayerId><TargetId>-1</TargetId><StepType>1</StepType></PlayerStep>"
+    dodge = "<ResultRoll><Requirement>2</Requirement><Dice><Die><Value>4</Value></Die></Dice><RollType>2</RollType><Outcome>1</Outcome></ResultRoll>"
+    first_rush = "<QuestionTeamRerollUsage><RollInfos><Requirement>2</Requirement><Dice><Die><Value>1</Value></Die></Dice><RollType>1</RollType><Outcome>0</Outcome></RollInfos></QuestionTeamRerollUsage>"
+    reroll = "<ResultTeamRerollUsage><Used>1</Used></ResultTeamRerollUsage>"
+    second_rush = "<ResultRoll><Requirement>2</Requirement><Dice><Die><Value>5</Value></Die></Dice><RollType>1</RollType><Outcome>1</Outcome></ResultRoll>"
+    move = "<ResultMoveOutcome><Moved>1</Moved></ResultMoveOutcome>"
+    xml = f"<Replay><Rosters/><ReplayStep>{sequence(message('PlayerStep', step), message('ResultRoll', dodge), message('ResultMoveOutcome', move), message('QuestionTeamRerollUsage', first_rush), message('ResultTeamRerollUsage', reroll), message('ResultRoll', second_rush), message('ResultMoveOutcome', move))}</ReplayStep></Replay>".encode()
+
+    event = Replay.from_xml(xml).timeline().to_narrative_dict()["events"][0]
+
+    assert event["type"] == "move"
+    assert event["checks"] == [
+        {
+            "type": "dodge", "subject": {"kind": "player", "id": 40},
+            "required": 2, "attempts": [{"dice": [4], "outcome": "passed"}],
+            "outcome": "passed",
+        },
+        {
+            "type": "rush", "subject": {"kind": "player", "id": 40},
+            "required": 2,
+            "attempts": [
+                {"dice": [1], "outcome": "failed"},
+                {"dice": [5], "outcome": "passed", "reroll": "team"},
+            ],
+            "outcome": "passed", "reroll_offered": ["team"],
+            "reroll_used": True,
+        },
+    ]
+    assert "effects" not in event

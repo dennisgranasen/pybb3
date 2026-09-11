@@ -206,7 +206,6 @@ class ReplayTimeline:
             result["outcome"] = effect.outcome
         details: dict[str, Any] = {}
         if effect.details:
-            details.update(cls._roll_summary(effect.details))
             if "status_name" in effect.details:
                 details["status_name"] = effect.details["status_name"]
             source = cls._participant_ref(effect.details.get("source"))
@@ -215,6 +214,121 @@ class ReplayTimeline:
         if details:
             result["details"] = details
         return result
+
+    @staticmethod
+    def _check_type(code: int | None) -> str:
+        if code in RollType._value2member_map_:
+            name = RollType(code).name.lower()
+            return {"gfi": "rush", "armor": "armour"}.get(name, name)
+        return f"roll_{code}" if code is not None else "unknown_roll"
+
+    @staticmethod
+    def _check_outcome(code: int | None, value: Any) -> str | int | None:
+        raw = _int(str(value)) if value is not None else None
+        if code == RollType.ARMOR:
+            return "armour_broken" if raw else "armour_held"
+        if code == RollType.INJURY and raw in InjuryOutcome._value2member_map_:
+            return InjuryOutcome(raw).name.lower()
+        if code == RollType.CASUALTY and raw in CasualtyOutcome._value2member_map_:
+            return CasualtyOutcome(raw).name.lower()
+        if code in {RollType.BLOCK, RollType.SCATTER, RollType.THROW_IN,
+                    RollType.BOUNCE, RollType.DEVIATE, RollType.KICK_OFF_TABLE}:
+            return raw
+        if raw is None:
+            return None
+        return "passed" if raw != 0 else "failed"
+
+    @classmethod
+    def _check_attempt(cls, data: Any, *, reroll: str | None = None) -> dict[str, Any]:
+        if not isinstance(data, dict):
+            return {}
+        attempt: dict[str, Any] = {}
+        dice = cls._dice(data.get("Dice"))
+        if dice:
+            attempt["dice"] = dice
+        code = _int(str(data.get("RollType"))) if data.get("RollType") is not None else None
+        outcome = cls._check_outcome(code, data.get("Outcome"))
+        if outcome is not None:
+            attempt["outcome"] = outcome
+        if reroll is not None:
+            attempt["reroll"] = reroll
+        return attempt
+
+    @classmethod
+    def _narrative_checks(cls, event: TimelineEvent) -> list[dict[str, Any]]:
+        details = event.details if isinstance(event.details, dict) else {}
+        messages = details.get("messages", [])
+        if not isinstance(messages, list):
+            return []
+        effects_by_type: dict[str, TimelineEffect] = {}
+        for effect in event.effects:
+            effects_by_type[{"gfi": "rush", "armor_roll": "armour"}.get(
+                effect.type, effect.type
+            )] = effect
+        checks: list[dict[str, Any]] = []
+        pending: dict[str, Any] | None = None
+        team_reroll_used: bool | None = None
+
+        def new_check(data: dict[str, Any], attempt: dict[str, Any]) -> dict[str, Any]:
+            code = _int(str(data.get("RollType"))) if data.get("RollType") is not None else None
+            kind = cls._check_type(code)
+            check: dict[str, Any] = {"type": kind}
+            effect = effects_by_type.get(kind)
+            subject = cls._participant_ref(effect.subject if effect else event.actor)
+            if subject is not None:
+                check["subject"] = subject
+            required = _int(str(data.get("Requirement"))) if data.get("Requirement") is not None else None
+            if required is not None and required > 0:
+                check["required"] = required
+            check["attempts"] = [attempt]
+            if attempt.get("outcome") is not None:
+                check["outcome"] = attempt["outcome"]
+            return check
+
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            name, data = message.get("type"), message.get("data")
+            if name == "QuestionTeamRerollUsage" and isinstance(data, dict):
+                roll = data.get("RollInfos")
+                if isinstance(roll, dict):
+                    attempt = cls._check_attempt(roll)
+                    check = new_check(roll, attempt)
+                    check["reroll_offered"] = ["team"]
+                    checks.append(check)
+                    pending = {"check": check, "roll": roll, "attempt": attempt}
+                    team_reroll_used = None
+                continue
+            if name == "ResultTeamRerollUsage" and pending is not None:
+                used = isinstance(data, dict) and str(data.get("Used")) == "1"
+                pending["check"]["reroll_used"] = used
+                team_reroll_used = used
+                continue
+            if name != "ResultRoll" or not isinstance(data, dict):
+                continue
+            code = _int(str(data.get("RollType"))) if data.get("RollType") is not None else None
+            # Positional/displacement rolls already have clearer event-specific
+            # representations and are not pass/fail checks.
+            if code in {RollType.SCATTER, RollType.THROW_IN, RollType.BOUNCE,
+                        RollType.DEVIATE, RollType.KICK_OFF_TABLE}:
+                continue
+            if pending is not None:
+                pending_code = _int(str(pending["roll"].get("RollType")))
+                if code == pending_code:
+                    attempt = cls._check_attempt(
+                        data, reroll="team" if team_reroll_used else None
+                    )
+                    prior = pending["attempt"]
+                    same = ({k: v for k, v in attempt.items() if k != "reroll"} == prior)
+                    if team_reroll_used or not same:
+                        pending["check"]["attempts"].append(attempt)
+                    pending["check"]["outcome"] = attempt.get("outcome")
+                    pending = None
+                    team_reroll_used = None
+                    continue
+            attempt = cls._check_attempt(data)
+            checks.append(new_check(data, attempt))
+        return checks
 
     @classmethod
     def _narrative_details(cls, details: Any) -> dict[str, Any]:
@@ -304,8 +418,17 @@ class ReplayTimeline:
                     item[key] = reference
             if event.outcome is not None:
                 item["outcome"] = event.outcome
-            if event.effects:
-                item["effects"] = [self._narrative_effect(x) for x in event.effects]
+            checks = self._narrative_checks(event)
+            if checks:
+                item["checks"] = checks
+            check_types = {check["type"] for check in checks}
+            effect_aliases = {"gfi": "rush", "armor_roll": "armour"}
+            effects = [
+                effect for effect in event.effects
+                if effect_aliases.get(effect.type, effect.type) not in check_types
+            ]
+            if effects:
+                item["effects"] = [self._narrative_effect(x) for x in effects]
             if event.caused_by is not None:
                 item["caused_by"] = event.caused_by
             details = self._narrative_details(event.details)

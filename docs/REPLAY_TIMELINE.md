@@ -115,3 +115,36 @@ text = timeline.to_narrative_json(
 The narrative format is identified by `format: pybb3-narrative-timeline` and
 `version: 1`. Event array order remains canonical; event IDs are references,
 not a sorting key.
+
+Every pass/fail dice test is exposed as a named `checks` entry. A check contains
+its purpose (`dodge`, `rush`, `tentacles`, `bone_head`, and so on), subject,
+target number, every attempt in order, final outcome, and reroll information.
+Never present an attempt merely as “Roll: N”. Roll-derived entries are removed
+from narrative `effects` when represented by `checks`; effects are reserved for
+remaining consequences such as pushes, knockdowns and removals.
+
+```json
+{
+  "type": "move",
+  "outcome": "completed",
+  "checks": [
+    {
+      "type": "dodge",
+      "required": 2,
+      "attempts": [{"dice": [4], "outcome": "passed"}],
+      "outcome": "passed"
+    },
+    {
+      "type": "rush",
+      "required": 2,
+      "attempts": [
+        {"dice": [1], "outcome": "failed"},
+        {"dice": [5], "outcome": "passed", "reroll": "team"}
+      ],
+      "outcome": "passed",
+      "reroll_offered": ["team"],
+      "reroll_used": true
+    }
+  ]
+}
+```

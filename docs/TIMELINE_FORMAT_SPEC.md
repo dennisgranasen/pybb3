@@ -139,6 +139,7 @@ while the intended blitz target is stored separately.
   "actor": {"kind": "player", "id": 37, "name": "Rok-rok", "team_id": 1},
   "target": {"kind": "player", "id": 46, "name": "Yesh", "team_id": 1},
   "outcome": "teammate_hit",
+  "checks": [],
   "effects": [],
   "source_sequences": [323, 324, 325, 326],
   "caused_by": null,
@@ -154,6 +155,7 @@ while the intended blitz target is stored separately.
 | `actor` | Participant or null | Participant performing or initiating the action. |
 | `target` | Participant or null | Direct recipient or selected victim of the normalized event. |
 | `outcome` | string, integer, boolean or null | Type-specific result. |
+| `checks` | array of TimelineCheck | Named dice tests, including every attempt and reroll. |
 | `effects` | array of TimelineEffect | Consequences produced or observed within the event. |
 | `source_sequences` | array of integers | Low-level replay sequences combined into this event. |
 | `caused_by` | event ID or null | Explicit causal link, currently used principally for special-card consequences. |
@@ -161,6 +163,41 @@ while the intended blitz target is stored separately.
 
 `null` means unknown or inapplicable. It must not be narrated as a known player,
 result or causal relation.
+
+### TimelineCheck
+
+```json
+{
+  "type": "rush",
+  "subject": {"kind": "player", "id": 40},
+  "required": 2,
+  "attempts": [
+    {"dice": [1], "outcome": "failed"},
+    {"dice": [5], "outcome": "passed", "reroll": "team"}
+  ],
+  "outcome": "passed",
+  "reroll_offered": ["team"],
+  "reroll_used": true
+}
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `type` | string | Purpose of the test, never merely `roll`; for example `dodge`, `rush`, `tentacles`, `bone_head`, `really_stupid`, `animal_savagery`, `bloodlust`, `foul_appearance`, `pick_up`, `catch`, `pass`, `armour` or `injury`. |
+| `subject` | compact Participant reference or null | Player taking the test or being tested. |
+| `required` | integer or null | Minimum required result when meaningful. |
+| `attempts` | array | Dice attempts in chronological order. |
+| `attempts[].dice` | array of integers | Dice values for that attempt. |
+| `attempts[].outcome` | string or integer | Contextual result such as `passed`, `failed`, `armour_broken`, `armour_held` or an injury outcome. |
+| `attempts[].reroll` | string or null | Reroll source for this attempt, currently for example `team`. The first attempt omits it. |
+| `outcome` | string or integer or null | Final result after all attempts. |
+| `reroll_offered` | array of strings | Available reroll sources observed by the parser. |
+| `reroll_used` | boolean | Whether the offered team reroll was used. |
+
+A dice value must never be presented without its `type`. Multiple attempts in
+one check are not separate actions. They describe an initial roll followed by
+one or more rerolls. Narrative wording must state why the roll occurred and,
+when relevant, that a reroll changed or failed to change the result.
 
 ### TimelineTurn
 
@@ -206,6 +243,10 @@ Use these rules literally:
 - `ball_loose.target` is the previous carrier. Its `actor` is the best-known
   active player and should not automatically be described as having caused the
   ball loss unless surrounding action data supports that statement.
+- `checks` describes tests that determine whether or how an action proceeds.
+  `effects` describes remaining consequences. A roll-derived effect is omitted
+  from the narrative projection when the corresponding named check exists, so
+  the same dodge, rush, armour or injury must not be narrated twice.
 
 ## 5. Stable core event semantics
 
@@ -227,7 +268,7 @@ and fall back to a neutral description or raw evidence.
 
 | Type | Meaning and outcome |
 |---|---|
-| `move` | Movement segment by `actor`; `outcome` is `completed` or `failed`. Consequences such as `dodge`, `gfi`, injury or removal are effects. Consecutive moves by one player should normally be summarized. |
+| `move` | Movement segment by `actor`; `outcome` is `completed` or `failed`. Required tests appear under `checks`, using `rush` rather than the legacy protocol term `gfi`. Consequences such as knockdown or removal remain effects. Consecutive moves by one player should normally be summarized. |
 | `stand_up` | Player stands up. Checks can appear as effects. |
 | `pass` | Pass attempt from actor to target. Outcome may be boolean or null; inspect effects/details. |
 | `catch` | Catch attempt. |
@@ -239,10 +280,9 @@ and fall back to a neutral description or raw evidence.
 | `ball_loose` | `target` was the carrier and the ball is no longer held. |
 | `bounce`, `scatter`, `throw_in`, `ball_action` | Ball displacement or generic ball operation. |
 
-Common movement/ball effects include `dodge`, `gfi`, `pick_up`, `catch`,
-`pass`, `interception`, `bounce`, `scatter`, `deviate` and `throw_in`.
-Boolean roll outcomes mean the protocol roll was successful (`true`) or failed
-(`false`) in that effect's context.
+Common movement and ball checks include `dodge`, `rush`, `pick_up`, `catch`,
+`pass` and `interception`. Displacement results such as bounce, scatter,
+deviation and throw-in are event/effect data rather than pass/fail checks.
 
 ### Blocks
 
@@ -466,6 +506,12 @@ Combine adjacent events when normalized fields establish a shared action:
 
 Do not merge solely because two events share a clock.
 
+For every `checks` entry, describe the purpose before any dice value. If there
+are multiple attempts, describe the failed initial attempt, reroll source and
+final attempt as one check. For example: “B’skyn dodged successfully on a 4,
+then failed a rush on a 1 before a team reroll succeeded on a 5.” Never emit a
+standalone label such as “Roll: 4”.
+
 ### Step 5: choose narrative importance
 
 High priority:
@@ -541,6 +587,11 @@ effects, injuries/removals, fouls, passes, special rules and kick-off results.
 Compress routine consecutive movement. For every action distinguish actor,
 direct target and effect subjects. Treat outcome=prevented as an attempted but
 unexecuted action.
+
+Every dice attempt must be named by its checks[].type. Never write a bare
+“Roll: N”. Treat all attempts inside one check as an initial roll and its
+rerolls, and state the reroll source when supplied. Use the term “rush” rather
+than “GFI”. Do not narrate a check again from effects.
 
 Combine Animal Savagery with its declared action when action_target and the
 following event support the connection. Describe a selected teammate and all
