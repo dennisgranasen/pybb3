@@ -78,3 +78,40 @@ Run the converter with:
 ```console
 python tools/replay_timeline.py match.bbr -o match.timeline.json
 ```
+
+## Compact narrative export
+
+For LLM input, use the non-duplicated narrative projection instead of the full
+research/debug representation:
+
+```python
+timeline.save_narrative("match.narrative.json")
+```
+
+Or from the command line (using `-o` writes UTF-8 directly and avoids
+PowerShell redirection changing the encoding):
+
+```console
+python tools/replay_timeline.py match.bbr --narrative -o match.narrative.json
+```
+
+It stores each event once, embeds turn context directly in playable events,
+uses compact `{kind, id}` participant references, summarizes the final score,
+removes raw protocol messages and omits routine successful movement without
+effects. Pure phase markers, normal turn endings, effect-free stand-ups and the
+large raw `inducements_data` payload are also omitted. Names remain available
+in `match.teams` and `match.players`.
+
+Optional switches restore information for positional narration or debugging:
+
+```python
+text = timeline.to_narrative_json(
+    include_moves=True,
+    include_evidence=True,
+    indent=2,
+)
+```
+
+The narrative format is identified by `format: pybb3-narrative-timeline` and
+`version: 1`. Event array order remains canonical; event IDs are references,
+not a sorting key.

@@ -1,4 +1,5 @@
 import base64
+import json
 
 from bb3.replay import Replay
 
@@ -246,3 +247,63 @@ def test_passed_animal_savagery_is_attached_to_completed_stand_up():
     assert event.type == "stand_up"
     assert event.effects[0].type == "animal_savagery"
     assert event.effects[0].outcome == "passed"
+
+
+def test_narrative_export_is_compact_non_duplicated_and_keeps_context(tmp_path):
+    routine_step = "<PlayerStep><PlayerId>1</PlayerId><TargetId>-1</TargetId><StepType>1</StepType></PlayerStep>"
+    failed_step = "<PlayerStep><PlayerId>2</PlayerId><TargetId>-1</TargetId><StepType>1</StepType></PlayerStep>"
+    move = "<ResultMoveOutcome><Moved>1</Moved></ResultMoveOutcome>"
+    injury = "<ResultInjuryRoll><Outcome>0</Outcome></ResultInjuryRoll>"
+    active = "<EventNewGamePhase><Phase>5</Phase></EventNewGamePhase><EventActiveGamerChanged/>"
+    board = """<BoardState><ListTeams><TeamState><GameTurn>1</GameTurn></TeamState>
+      <TeamState><GameTurn/></TeamState></ListTeams></BoardState>"""
+    end = "<EventEndTurn><Reason>2</Reason></EventEndTurn>"
+    xml = f"""<Replay><Rosters/><ReplayStep>{active}
+      {sequence(message('PlayerStep', routine_step), message('ResultMoveOutcome', move))}
+      {sequence(message('PlayerStep', failed_step), message('ResultMoveOutcome', move), message('ResultInjuryRoll', injury))}
+      {end}{board}</ReplayStep><EndGame><RulesEventGameFinished><MatchResult><GamerResults>
+      <GamerResult><TeamResult><Score>2</Score></TeamResult></GamerResult>
+      <GamerResult><TeamResult><Score>1</Score></TeamResult></GamerResult>
+      </GamerResults></MatchResult></RulesEventGameFinished></EndGame></Replay>""".encode()
+
+    timeline = Replay.from_xml(xml).timeline()
+    data = timeline.to_narrative_dict()
+
+    assert data["format"] == "pybb3-narrative-timeline" and data["version"] == 1
+    assert data["match"]["result"] == {
+        "teams": [{"team_id": 0, "score": 2}, {"team_id": 1, "score": 1}],
+        "score": [2, 1], "winner_team_id": 0,
+    }
+    moves = [event for event in data["events"] if event["type"] == "move"]
+    assert len(moves) == 1
+    assert moves[0]["half"] == 1 and moves[0]["team_turn"] == 1
+    assert "messages" not in moves[0].get("details", {})
+    assert "turns" not in data
+    assert len({event["id"] for event in data["events"]}) == len(data["events"])
+    saved = timeline.save_narrative(tmp_path / "narrative.json")
+    assert json.loads(saved.read_text(encoding="utf-8"))["format"] == data["format"]
+
+
+def test_narrative_result_treats_present_empty_score_as_zero():
+    xml = b"""<Replay><Rosters/><EndGame><RulesEventGameFinished><MatchResult>
+      <GamerResults><GamerResult><TeamResult><Score>2</Score></TeamResult></GamerResult>
+      <GamerResult><TeamResult><Score/></TeamResult></GamerResult></GamerResults>
+    </MatchResult></RulesEventGameFinished></EndGame></Replay>"""
+
+    result = Replay.from_xml(xml).timeline().to_narrative_dict()["match"]["result"]
+
+    assert result["score"] == [2, 0]
+    assert result["winner_team_id"] == 0
+
+
+def test_narrative_export_options_restore_moves_and_evidence():
+    step = "<PlayerStep><PlayerId>1</PlayerId><TargetId>-1</TargetId><StepType>1</StepType></PlayerStep>"
+    move = "<ResultMoveOutcome><Moved>1</Moved></ResultMoveOutcome>"
+    xml = f"<Replay><Rosters/><ReplayStep>{sequence(message('PlayerStep', step), message('ResultMoveOutcome', move))}</ReplayStep></Replay>".encode()
+
+    event = Replay.from_xml(xml).timeline().to_narrative_dict(
+        include_moves=True, include_evidence=True
+    )["events"][0]
+
+    assert event["type"] == "move"
+    assert event["details"]["messages"][0]["type"] == "PlayerStep"
