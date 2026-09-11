@@ -255,6 +255,19 @@ class ReplayTimeline:
         return attempt
 
     @classmethod
+    def _skill_reroll_source(cls, data: Any, roll_code: int | None) -> str:
+        """Return a stable narrative name for a skill reroll."""
+        skill_id = None
+        if isinstance(data, dict) and data.get("Skill") is not None:
+            skill_id = _int(str(data.get("Skill")))
+        known = {7: "dodge"}
+        if skill_id in known:
+            return known[skill_id]
+        if skill_id is not None:
+            return f"skill_{skill_id}"
+        return f"{cls._check_type(roll_code)}_skill"
+
+    @classmethod
     def _narrative_checks(cls, event: TimelineEvent) -> list[dict[str, Any]]:
         details = event.details if isinstance(event.details, dict) else {}
         messages = details.get("messages", [])
@@ -268,6 +281,8 @@ class ReplayTimeline:
         checks: list[dict[str, Any]] = []
         pending: dict[str, Any] | None = None
         team_reroll_used: bool | None = None
+        last_roll: dict[str, Any] | None = None
+        skill_reroll_pending: dict[str, Any] | None = None
 
         def new_check(data: dict[str, Any], attempt: dict[str, Any]) -> dict[str, Any]:
             code = _int(str(data.get("RollType"))) if data.get("RollType") is not None else None
@@ -304,6 +319,17 @@ class ReplayTimeline:
                 pending["check"]["reroll_used"] = used
                 team_reroll_used = used
                 continue
+            if name == "ResultSkillUsage" and isinstance(data, dict):
+                used = str(data.get("Used")) == "1"
+                if (used and last_roll is not None
+                        and last_roll["check"].get("outcome") == "failed"):
+                    skill_reroll_pending = {
+                        **last_roll,
+                        "source": cls._skill_reroll_source(
+                            data, last_roll.get("code")
+                        ),
+                    }
+                continue
             if name != "ResultRoll" or not isinstance(data, dict):
                 continue
             code = _int(str(data.get("RollType"))) if data.get("RollType") is not None else None
@@ -323,11 +349,35 @@ class ReplayTimeline:
                     if team_reroll_used or not same:
                         pending["check"]["attempts"].append(attempt)
                     pending["check"]["outcome"] = attempt.get("outcome")
+                    last_roll = {
+                        "check": pending["check"], "roll": data,
+                        "attempt": attempt, "code": code,
+                    }
                     pending = None
                     team_reroll_used = None
                     continue
+            if skill_reroll_pending is not None:
+                if code == skill_reroll_pending.get("code"):
+                    attempt = cls._check_attempt(
+                        data, reroll=skill_reroll_pending["source"]
+                    )
+                    check = skill_reroll_pending["check"]
+                    check["attempts"].append(attempt)
+                    check["outcome"] = attempt.get("outcome")
+                    check["reroll_used"] = True
+                    last_roll = {
+                        "check": check, "roll": data,
+                        "attempt": attempt, "code": code,
+                    }
+                    skill_reroll_pending = None
+                    continue
+                skill_reroll_pending = None
             attempt = cls._check_attempt(data)
-            checks.append(new_check(data, attempt))
+            check = new_check(data, attempt)
+            checks.append(check)
+            last_roll = {
+                "check": check, "roll": data, "attempt": attempt, "code": code,
+            }
         return checks
 
     @classmethod

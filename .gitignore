@@ -4,6 +4,7 @@ __pycache__/
 *.xml
 *.bin
 *.b64
+*.patch
 .env
 steam-bootstrap.json
 .bb3-steam-auth.json

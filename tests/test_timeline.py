@@ -339,3 +339,24 @@ def test_narrative_checks_name_roll_purpose_and_preserve_team_reroll_chain():
         },
     ]
     assert "effects" not in event
+
+
+def test_narrative_checks_merge_skill_reroll_into_same_check():
+    step = "<PlayerStep><PlayerId>41</PlayerId><TargetId>-1</TargetId><StepType>1</StepType></PlayerStep>"
+    failed = "<ResultRoll><Requirement>2</Requirement><Dice><Die><Value>1</Value></Die></Dice><RollType>2</RollType><Outcome>0</Outcome></ResultRoll>"
+    dodge_skill = "<ResultSkillUsage><PlayerId>41</PlayerId><Skill>7</Skill><Used>1</Used></ResultSkillUsage>"
+    passed = "<ResultRoll><Requirement>2</Requirement><Dice><Die><Value>3</Value></Die></Dice><RollType>2</RollType><Outcome>1</Outcome></ResultRoll>"
+    move = "<ResultMoveOutcome><Moved>1</Moved></ResultMoveOutcome>"
+    xml = f"<Replay><Rosters/><ReplayStep>{sequence(message('PlayerStep', step), message('ResultRoll', failed), message('ResultSkillUsage', dodge_skill), message('ResultRoll', passed), message('ResultMoveOutcome', move))}</ReplayStep></Replay>".encode()
+
+    event = Replay.from_xml(xml).timeline().to_narrative_dict()["events"][0]
+
+    assert event["checks"] == [{
+        "type": "dodge", "subject": {"kind": "player", "id": 41},
+        "required": 2,
+        "attempts": [
+            {"dice": [1], "outcome": "failed"},
+            {"dice": [3], "outcome": "passed", "reroll": "dodge"},
+        ],
+        "outcome": "passed", "reroll_used": True,
+    }]
