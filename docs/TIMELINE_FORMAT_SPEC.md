@@ -288,7 +288,7 @@ and fall back to a neutral description or raw evidence.
 
 | Type | Meaning and outcome |
 |---|---|
-| `move` | Movement segment by `actor`; `outcome` is `completed` or `failed`. Required tests appear under `checks`, using `rush` rather than the legacy protocol term `gfi`. Consequences such as knockdown or removal remain effects. Consecutive moves by one player should normally be summarized. |
+| `move` | Movement segment by `actor`; `outcome` is `completed` or `failed`. In the narrative projection, required tests appear under `checks`, using `rush` rather than the legacy protocol term `gfi`; the full timeline retains their protocol evidence in `details.messages`. Consequences such as knockdown or removal remain effects. Consecutive moves by one player should normally be summarized. |
 | `stand_up` | Player stands up. Checks can appear as effects. |
 | `pass` | Pass attempt from actor to target. Outcome may be boolean or null; inspect effects/details. |
 | `catch` | Catch attempt. |
@@ -368,19 +368,22 @@ possession.
 
 ### Animal Savagery
 
-Animal Savagery may be a standalone event or a check effect attached to an
-action that completes in the same reduced sequence, such as `stand_up`.
+Animal Savagery uses the common `negatrait_check` event type when emitted as
+a standalone activation check. It can instead be attached as a `negatrait_check`
+effect to an action that completes in the same reduced sequence, such as
+`stand_up`.
 
 Standalone form:
 
 ```json
 {
-  "type": "animal_savagery",
+  "type": "negatrait_check",
   "actor": "player taking the check",
   "target": "selected teammate or null",
   "outcome": "passed | teammate_hit | activation_lost",
   "effects": [],
   "details": {
+    "trait": "animal_savagery",
     "declared_action": "move | block | blitz | ...",
     "action_target": "original action target or null",
     "eligible_targets": ["teammates that could be selected"],
@@ -585,8 +588,8 @@ A consumer or test suite should check:
 6. Player participants with known `team_id` refer to a known team slot.
 7. A completed block has actor and target where the replay identified them.
 8. A block with outcome `prevented` is not counted as an executed block.
-9. `animal_savagery` with outcome `teammate_hit` has a teammate target and a
-   `knockdown` effect for that target.
+9. A `negatrait_check` with `details.trait == "animal_savagery"` and outcome
+   `teammate_hit` has a teammate target and a `knockdown` effect for that target.
 10. `unresolved` is surfaced to diagnostics.
 
 ## 9. Minimal LLM instruction template

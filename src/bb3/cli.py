@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
-
 from .client import BB3Client
 from .constants import DEFAULT_CLIENT_VERSION
 
@@ -89,7 +87,7 @@ def main() -> int:
     replay.add_argument(
         "--keep-ip-addresses",
         action="store_true",
-        help="preserve sensitive participant IP addresses in replay XML",
+        help="preserve sensitive participant IP addresses in replay output",
     )
     add_connection_args(replay)
     replay.set_defaults(func=cmd_replay)
