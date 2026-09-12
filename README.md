@@ -17,7 +17,9 @@ Capture-verified or end-to-end verified:
 - headless Steam authentication through a SteamKit2 helper
 - BB3 login
 - dynamic Cyanide backend discovery
-- replay download/decode
+- lossless replay download/decode with lazy BBR/XML/JSON conversion
+- semantic replay timeline extraction
+- compact narrative replay projection with named checks and rerolls
 - game listing, structured game results and decoded match statistics
 - team creation, listing and roster retrieval
 - league creation, lookup, members and permissions
@@ -273,35 +275,49 @@ Runtime/backend state and static game rules remain separate layers.
 
 ## Replays
 
-`download_replay()` returns decoded XML bytes. Participant `IpAddress` fields
-are Base64-encoded inside the XML; they are replaced in memory with stable RFC
-5737 documentation addresses (`192.0.2.x`) before the bytes are returned:
+`download_replay()` returns a lossless `Replay` backed by the untouched
+`ReplayData` value from the server. Conversion between BBR, XML and JSON is
+lazy. IP-address redaction is an explicit transformation that returns a new
+replay object; the downloaded source object is not modified:
 
 ```python
-from pathlib import Path
-
 with BB3Client.from_steam() as client:
     client.login()
-    Path("replay.xml").write_bytes(client.download_replay(game_id))
+    replay = client.download_replay(game_id)
+
+anonymous = replay.redact_ip_addresses()
+anonymous.save("replay.bbr")
+anonymous.save("replay.xml")
+anonymous.save("replay.json")
 ```
 
-Distinct source addresses remain distinguishable within one replay, but the
-temporary mapping and original values are not retained. For private diagnostic
-use only, redaction can be explicitly disabled with
-`download_replay(game_id, redact_ip_addresses=False)` or the CLI flag
-`--keep-ip-addresses`.
+`Replay.timeline()` builds the normalized semantic event stream used by
+statistics and UI consumers. `save_narrative()` produces the compact projection
+intended for match narration and LLM input:
+
+```python
+timeline = replay.timeline()
+timeline.save("replay.timeline.json")
+timeline.save_narrative("replay.narrative.json")
+```
+
+Participant `IpAddress` values inside replay XML are sensitive. Redaction maps
+distinct source addresses to stable RFC 5737 documentation addresses within
+that transformed replay. The CLI redacts by default; `--keep-ip-addresses`
+exists only for private diagnostics.
 
 The wire encoding is:
 
 ```text
-ReplayData -> Base64 -> Base64 -> zlib -> XML -> redact IpAddress in memory
+ReplayData -> Base64 -> Base64 -> zlib -> XML
 ```
 
 ### Live replay smoke script
 
 The script below logs in, searches for any completed game with a replay,
-downloads it with IP redaction enabled, verifies the saved `.bbr`, saves a JSON
-copy and writes the complete JSON to stdout. Progress messages go to stderr, so
+downloads it, explicitly redacts participant IP addresses, verifies the saved
+`.bbr`, saves a JSON copy and writes the complete JSON to stdout. Progress
+messages go to stderr, so
 stdout remains pipe-friendly:
 
 ```bash
@@ -329,7 +345,7 @@ PYBB3_RUN_LIVE_TESTS=1 pytest -q tests/test_live_replay_redaction.py
 
 The live test downloads a real replay into pytest's temporary directory and
 asserts that every decoded `IpAddress` is one of the RFC 5737 values inserted by
-the in-memory download redaction step.
+the explicit in-memory redaction transformation.
 
 ## Games, results and statistics
 
@@ -352,6 +368,9 @@ endpoints. Numeric filter and status values are only named where verified.
 - [Protocol reference](docs/PROTOCOL.md): framing and captured request semantics.
 - [Enums](docs/ENUMS.md): verified numeric values and unresolved meanings.
 - [Data sources](docs/DATA_SOURCES.md): local game archives and static rules.
+- [Replay formats](docs/REPLAY_FORMATS.md): lossless BBR/XML/JSON conversion and redaction.
+- [Replay timeline](docs/REPLAY_TIMELINE.md): semantic extraction and narrative export.
+- [Timeline format spec](docs/TIMELINE_FORMAT_SPEC.md): normalized event/check contract.
 - [Backlog](BACKLOG.md): implementation status and remaining research.
 
 ## Next protocol targets

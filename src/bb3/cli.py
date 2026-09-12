@@ -36,11 +36,9 @@ def authenticated_client(args):
 def cmd_replay(args) -> int:
     client = authenticated_client(args)
     try:
-        xml = client.download_replay(
-            args.game_id,
-            redact_ip_addresses=not args.keep_ip_addresses,
-        )
-        Path(args.output).write_bytes(xml)
+        replay = client.download_replay(args.game_id)
+        output = replay if args.keep_ip_addresses else replay.redact_ip_addresses()
+        output.save(args.output)
         print(args.output)
         return 0
     finally:

@@ -578,25 +578,30 @@ team cosmetics.
 
 **VERIFIED**
 
-`RequestDownloadReplay` uses `GameId` Base64. Replay payload decode:
+`RequestDownloadReplay` uses `GameId` Base64. The server payload itself is kept
+lossless by `download_replay()` and exposed through a `Replay` object:
 
 ```text
-ReplayData -> Base64 -> Base64 -> zlib -> XML -> redact IpAddress in memory
+ReplayData -> Base64 -> Base64 -> zlib -> XML
 ```
 
 `MatchResult/GamerResults/GamerResult/IpAddress` contains a Base64-encoded
-participant IP address in observed replay XML. `download_replay()` replaces
-each distinct value with a stable RFC 5737 documentation address before
-returning the XML. Redaction is enabled by default and can only be disabled
-explicitly for private diagnostics.
+participant IP address in observed replay XML. `Replay.redact_ip_addresses()`
+returns a new XML-backed replay in which each distinct source address is
+replaced with a stable RFC 5737 documentation address. The original downloaded
+`Replay` remains untouched. CLI replay export redacts by default; preserving
+source addresses requires the explicit `--keep-ip-addresses` diagnostic flag.
 
 `tools/download_any_replay.py` exercises login, official competition discovery,
-competition-scoped `GetGames`, replay download,
-on-disk verification and XML-to-JSON conversion. `tools/replay_ips.py` accepts
-the decoded `.bbr`, its JSON representation, or stdin and prints only decoded
-IP addresses. The opt-in live test uses the same request path and verifies that
-the saved replay contains only the documentation addresses assigned during
-redaction.
+competition-scoped `GetGames`, replay download, explicit redaction, on-disk
+verification and XML-to-JSON conversion. `tools/replay_ips.py` accepts `.bbr`,
+XML, JSON or stdin and prints only decoded IP addresses. The opt-in live test
+uses the same request path and verifies the explicitly redacted replay contains
+only documentation addresses.
+
+Semantic interpretation is a separate layer: `Replay.timeline()` combines
+ordered protocol messages into normalized match-domain events while preserving
+decoded message evidence for diagnostics and future protocol work.
 
 ## Existing verified team operations
 

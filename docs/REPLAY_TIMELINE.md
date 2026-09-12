@@ -34,10 +34,15 @@ was affected:
 }
 ```
 
-A block can span several `EventExecuteSequence` elements. The parser carries
-the active player and target forward until the outcome, push, armour and injury
-messages have arrived. Those low-level decoded messages remain under
-`details.messages` as evidence and for future enum research.
+A block can span several `EventExecuteSequence` elements. A
+`ResultBlockRoll` can be followed by push/follow-up interaction in one sequence
+while the matching `ResultBlockOutcome` arrives in the next sequence. The
+continuation is correlated by attacker/defender rather than by blindly trusting
+the last `PlayerStep` in the later sequence; BB3 can already have started a
+subsequent catch or other step there. Once the outcome arrives the completed
+block is reduced before BoardState-derived possession changes. Low-level decoded
+messages remain under `details.messages` as evidence and for future protocol
+research.
 
 Currently reduced core events include movement/falls, blocks and their effects,
 pass/catch/handoff/interception/foul actions identified by `StepType`,
@@ -121,7 +126,10 @@ not a sorting key.
 Every pass/fail dice test is exposed as a named `checks` entry. A check contains
 its purpose (`dodge`, `rush`, `tentacles`, `bone_head`, and so on), subject,
 effective target number, every attempt in order, final outcome, and reroll
-information. When BB3 supplies `Difficulty`, pybb3 uses it as `required` and
+information. Team rerolls are identified from the explicit team-reroll
+question/result messages; skill rerolls are kept as skill-sourced attempts and
+do not become team rerolls merely because a team reroll was also available.
+When BB3 supplies `Difficulty`, pybb3 uses it as `required` and
 retains the unmodified `Requirement` as `base_required` when the two differ.
 Never present an attempt merely as “Roll: N”. Roll-derived entries are removed
 from narrative `effects` when represented by `checks`; effects are reserved for
@@ -152,3 +160,22 @@ remaining consequences such as pushes, knockdowns and removals.
   ]
 }
 ```
+
+## Regression testing with local replays
+
+Synthetic unit tests cover protocol shapes and reducer edge cases. A separate
+local replay suite can additionally run semantic invariants against real `.bbr`
+files without committing those replays:
+
+```console
+pytest -m testdata -v
+```
+
+Files under `testdata/*.bbr` are intentionally gitignored. The suite checks
+cross-event invariants such as unique/valid references, turn ownership, reroll
+consistency, movement-check subjects, turnover causes, pass-group context and
+the set of unresolved protocol message types.
+
+`unresolved` is deliberately retained as a forward-compatibility signal. New
+message types should be inspected and either normalized or explicitly classified
+rather than silently added to a permanent ignore list.

@@ -200,8 +200,18 @@ Add structured models only where they provide concrete downstream value.
 ## DONE — Replay download
 Double Base64 + zlib decode is implemented.
 
-## TODO — Replay semantic event API
-Priority: `P2`
+## DONE — Replay semantic event API
+
+The replay layer now has three explicit levels:
+- lossless `Replay` with lazy BBR/XML/JSON conversion and explicit IP redaction
+- semantic `Replay.timeline()` with actor/target/effects, turn context,
+  multi-sequence action reduction, causal references and unresolved evidence
+- compact narrative projection with named checks, effective/base requirements,
+  team and skill rerolls, and duplicate suppression
+
+Real replay regression tests live behind the `testdata` marker and run against
+gitignored `testdata/*.bbr` files. New unresolved protocol types should remain
+visible until inspected rather than being silently discarded.
 
 # 6. Formations
 
@@ -257,6 +267,13 @@ require `PYBB3_ALLOW_DESTRUCTIVE_TESTS=1`.
 Golden sanitized fixtures should include roster, player improvements,
 characteristic roll, delete-team response, game listing and game result.
 
+Replay parsing additionally uses:
+- synthetic protocol/reducer tests in `tests/test_timeline.py`
+- semantic invariant tests over local real-world `.bbr` files via
+  `pytest -m testdata`
+- `unresolved` as a regression signal for protocol messages that still need
+  classification
+
 # 13. Immediate priorities
 
 ## P0
@@ -278,13 +295,12 @@ characteristic roll, delete-team response, game listing and game result.
 ## P2
 13. broaden `GetGames` filters/models as concrete consumers require
 14. broaden `GetGameResult` / SPP / dice-roll models
-15. replay semantic event API
-16. event dispatcher refinements
+15. event dispatcher refinements
 
 ## P3
-17. weekly free Warpstone claim after claim endpoint capture
-18. battle-pass / gamer-progression reward claim helpers
-19. gamer profile cosmetics/social/home-menu endpoints
+16. weekly free Warpstone claim after claim endpoint capture
+17. battle-pass / gamer-progression reward claim helpers
+18. gamer profile cosmetics/social/home-menu endpoints
 
 # 14. Codex working rules
 
