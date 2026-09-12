@@ -184,7 +184,8 @@ result or causal relation.
 {
   "type": "rush",
   "subject": {"kind": "player", "id": 40},
-  "required": 2,
+  "required": 3,
+  "base_required": 2,
   "attempts": [
     {"dice": [1], "outcome": "failed"},
     {"dice": [5], "outcome": "passed", "reroll": "team"}
@@ -199,7 +200,8 @@ result or causal relation.
 |---|---|---|
 | `type` | string | Purpose of the test, never merely `roll`; for example `dodge`, `rush`, `tentacles`, `bone_head`, `really_stupid`, `animal_savagery`, `bloodlust`, `foul_appearance`, `pick_up`, `catch`, `pass`, `armour` or `injury`. |
 | `subject` | compact Participant reference or null | Player taking the test or being tested. |
-| `required` | integer or null | Minimum required result when meaningful. |
+| `required` | integer or null | Effective minimum result after replay-supplied modifiers. When BB3 supplies `Difficulty`, it takes precedence over `Requirement`. |
+| `base_required` | integer or null | Unmodified `Requirement` when it differs from `required`; omitted otherwise. |
 | `attempts` | array | Dice attempts in chronological order. |
 | `attempts[].dice` | array of integers | Dice values for that attempt. |
 | `attempts[].outcome` | string or integer | Contextual result such as `passed`, `failed`, `armour_broken`, `armour_held` or an injury outcome. |

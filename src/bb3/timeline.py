@@ -179,13 +179,33 @@ class ReplayTimeline:
                 values.append(parsed)
         return values
 
+    @staticmethod
+    def _roll_target_numbers(data: Any) -> tuple[int | None, int | None]:
+        """Return (effective target, base target) from a BB3 roll payload."""
+        if not isinstance(data, dict):
+            return None, None
+        base = _int(str(data.get("Requirement"))) if data.get("Requirement") is not None else None
+        difficulty = _int(str(data.get("Difficulty"))) if data.get("Difficulty") is not None else None
+        effective = difficulty if difficulty is not None and difficulty > 0 else base
+        return effective, base
+
     @classmethod
     def _roll_summary(cls, data: Any) -> dict[str, Any]:
         if not isinstance(data, dict):
             return {}
         result: dict[str, Any] = {}
+        required, base_required = cls._roll_target_numbers(data)
+        if required is not None and required > 0:
+            result["required"] = required
+        if (
+            base_required is not None and base_required > 0
+            and required is not None and base_required != required
+        ):
+            result["base_required"] = base_required
+        if data.get("Difficulty") is not None:
+            difficulty = _int(str(data["Difficulty"]))
+            result["difficulty"] = difficulty if difficulty is not None else data["Difficulty"]
         for source, target in (
-            ("Requirement", "required"), ("Difficulty", "difficulty"),
             ("RollType", "roll_type"), ("Outcome", "protocol_outcome"),
         ):
             if source in data:
@@ -294,9 +314,14 @@ class ReplayTimeline:
             subject = cls._participant_ref(effect.subject if effect else event.actor)
             if subject is not None:
                 check["subject"] = subject
-            required = _int(str(data.get("Requirement"))) if data.get("Requirement") is not None else None
+            required, base_required = cls._roll_target_numbers(data)
             if required is not None and required > 0:
                 check["required"] = required
+            if (
+                base_required is not None and base_required > 0
+                and required is not None and base_required != required
+            ):
+                check["base_required"] = base_required
             check["attempts"] = [attempt]
             if attempt.get("outcome") is not None:
                 check["outcome"] = attempt["outcome"]

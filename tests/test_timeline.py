@@ -377,6 +377,38 @@ def test_narrative_checks_name_roll_purpose_and_preserve_team_reroll_chain():
     assert "effects" not in event
 
 
+def test_narrative_checks_use_effective_difficulty_and_preserve_base_requirement():
+    step = "<PlayerStep><PlayerId>40</PlayerId><TargetId>-1</TargetId><StepType>1</StepType></PlayerStep>"
+    pickup = "<ResultRoll><Requirement>2</Requirement><Difficulty>4</Difficulty><Dice><Die><Value>3</Value></Die></Dice><RollType>4</RollType><Outcome>0</Outcome></ResultRoll>"
+    move = "<ResultMoveOutcome><Moved>1</Moved></ResultMoveOutcome>"
+    xml = f"<Replay><Rosters/><ReplayStep>{sequence(message('PlayerStep', step), message('ResultRoll', pickup), message('ResultMoveOutcome', move))}</ReplayStep></Replay>".encode()
+
+    event = Replay.from_xml(xml).timeline().to_narrative_dict()["events"][0]
+    check = event["checks"][0]
+
+    assert check["type"] == "pick_up"
+    assert check["required"] == 4
+    assert check["base_required"] == 2
+    assert check["attempts"] == [{"dice": [3], "outcome": "failed"}]
+
+
+def test_team_reroll_offer_uses_effective_difficulty():
+    step = "<PlayerStep><PlayerId>40</PlayerId><TargetId>-1</TargetId><StepType>1</StepType></PlayerStep>"
+    offered = "<QuestionTeamRerollUsage><RollInfos><Requirement>3</Requirement><Difficulty>5</Difficulty><Dice><Die><Value>4</Value></Die></Dice><RollType>5</RollType><Outcome>0</Outcome></RollInfos></QuestionTeamRerollUsage>"
+    declined = "<ResultTeamRerollUsage><Used>0</Used></ResultTeamRerollUsage>"
+    move = "<ResultMoveOutcome><Moved>1</Moved></ResultMoveOutcome>"
+    xml = f"<Replay><Rosters/><ReplayStep>{sequence(message('PlayerStep', step), message('QuestionTeamRerollUsage', offered), message('ResultTeamRerollUsage', declined), message('ResultMoveOutcome', move))}</ReplayStep></Replay>".encode()
+
+    event = Replay.from_xml(xml).timeline().to_narrative_dict(include_moves=True)["events"][0]
+    check = event["checks"][0]
+
+    assert check["type"] == "pass"
+    assert check["required"] == 5
+    assert check["base_required"] == 3
+    assert check["reroll_offered"] == ["team"]
+    assert check["reroll_used"] is False
+
+
 def test_narrative_checks_merge_skill_reroll_into_same_check():
     step = "<PlayerStep><PlayerId>41</PlayerId><TargetId>-1</TargetId><StepType>1</StepType></PlayerStep>"
     failed = "<ResultRoll><Requirement>2</Requirement><Dice><Die><Value>1</Value></Die></Dice><RollType>2</RollType><Outcome>0</Outcome></ResultRoll>"

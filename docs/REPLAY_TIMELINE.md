@@ -120,7 +120,9 @@ not a sorting key.
 
 Every pass/fail dice test is exposed as a named `checks` entry. A check contains
 its purpose (`dodge`, `rush`, `tentacles`, `bone_head`, and so on), subject,
-target number, every attempt in order, final outcome, and reroll information.
+effective target number, every attempt in order, final outcome, and reroll
+information. When BB3 supplies `Difficulty`, pybb3 uses it as `required` and
+retains the unmodified `Requirement` as `base_required` when the two differ.
 Never present an attempt merely as “Roll: N”. Roll-derived entries are removed
 from narrative `effects` when represented by `checks`; effects are reserved for
 remaining consequences such as pushes, knockdowns and removals.
