@@ -794,6 +794,7 @@ class _Parser:
         self.ball_carrier_id: int | None = None
         self.cause_event_id: int | None = None
         self.special_card: str | None = None
+        self.pending_bloodlust: dict[int, int] = {}
         self.unresolved: defaultdict[str, int] = defaultdict(int)
         self.before_events: list[dict[str, Any]] = []
         self._participants()
@@ -919,6 +920,7 @@ class _Parser:
         RollType.UNCHANNELLED_FURY: "unchannelled_fury",
         RollType.ALWAYS_HUNGRY: "always_hungry",
         RollType.TAKE_ROOT: "take_root",
+        RollType.BLOODLUST: "bloodlust",
     }
 
     def _negatrait_event(
@@ -926,6 +928,15 @@ class _Parser:
         clock: int | None, sequences: tuple[int, ...], evidence: dict[str, Any],
     ) -> TimelineEvent | None:
         """Normalize simple activation negatraits to one semantic event type."""
+        activation = next((
+            step for step in self._find(messages, "PlayerStep")
+            if _int(_text(step.node, "StepType")) == StepType.ACTIVATION
+        ), None)
+        check_actor = (
+            self._who(_int(_text(activation.node, "PlayerId")))
+            if activation is not None else actor
+        ) or actor
+
         for roll in self._find(messages, "ResultRoll"):
             roll_type = _int(_text(roll.node, "RollType"))
             if roll_type not in RollType._value2member_map_:
@@ -940,11 +951,17 @@ class _Parser:
                 "trait": trait,
                 "check": self._roll_details(roll),
             })
-            return self._event(
-                "negatrait_check", clock, actor=actor,
+            event = self._event(
+                "negatrait_check", clock, actor=check_actor,
                 outcome="passed" if passed else "failed",
                 source_sequences=sequences, details=details,
             )
+            if trait == "bloodlust" and check_actor is not None and isinstance(check_actor.id, int):
+                if passed:
+                    self.pending_bloodlust.pop(check_actor.id, None)
+                else:
+                    self.pending_bloodlust[check_actor.id] = event.id
+            return event
         return None
 
     def _animal_savagery_event(
@@ -990,6 +1007,47 @@ class _Parser:
             "negatrait_check", clock, actor=actor, target=victim,
             outcome=outcome, effects=tuple(effects), source_sequences=sequences,
             details=evidence,
+        )
+
+    def _bloodlust_bite_event(
+        self, messages: list[_Message], actor: TimelineParticipant | None,
+        clock: int | None, sequences: tuple[int, ...], evidence: dict[str, Any],
+    ) -> TimelineEvent | None:
+        bite = next(iter(self._find(messages, "ResultBite")), None)
+        if bite is None:
+            return None
+
+        victim_id = _int(_text(bite.node, "VictimId"))
+        victim = self._who(victim_id)
+        effects: list[TimelineEffect] = []
+        if victim is not None:
+            effects.extend(self._damage_effects(messages, victim))
+        elif actor is not None:
+            lost_zone = next((
+                item for item in self._find(messages, "ResultAddPlayerEffect")
+                if (
+                    _int(_text(item.node, "PlayerId")) == actor.id
+                    and _int(_text(item.node, "EffectId")) == 44
+                )
+            ), None)
+            if lost_zone is not None:
+                effects.append(TimelineEffect(
+                    "lost_tackle_zone", actor, True, _data(lost_zone.node)
+                ))
+
+        details = dict(evidence)
+        details.update({
+            "trait": "bloodlust",
+            "bite": _data(bite.node),
+        })
+        caused_by = None
+        if actor is not None and isinstance(actor.id, int):
+            caused_by = self.pending_bloodlust.pop(actor.id, None)
+        return self._event(
+            "bloodlust_bite", clock, actor=actor, target=victim,
+            outcome="teammate_bitten" if victim is not None else "no_victim",
+            effects=tuple(effects), source_sequences=sequences,
+            caused_by=caused_by, details=details,
         )
 
     def _reduce(self, messages: list[_Message]) -> list[TimelineEvent]:
@@ -1084,6 +1142,21 @@ class _Parser:
             )
             return ([negatrait] if negatrait is not None else []) + [block_event]
         step_code = _int(_text(steps[-1].node, "StepType")) if steps else None
+        if step_code == StepType.HYPNOTIC_GAZE:
+            gaze = next((
+                roll for roll in reversed(self._find(messages, "ResultRoll"))
+                if _int(_text(roll.node, "RollType")) == RollType.HYPNOTIC_GAZE
+            ), None)
+            outcome = (
+                None if gaze is None
+                else ("passed" if _text(gaze.node, "Outcome") != "0" else "failed")
+            )
+            gaze_event = self._event(
+                "hypnotic_gaze", clock, actor=actor, target=target,
+                outcome=outcome, source_sequences=sequences, details=action_evidence,
+            )
+            return ([negatrait] if negatrait is not None else []) + [gaze_event]
+
         action_types = {
             StepType.PASS: "pass", StepType.CATCH: "catch", StepType.HANDOFF: "handoff",
             StepType.FOUL: "foul", StepType.CHAINSAW_FOUL: "foul",
@@ -1131,6 +1204,27 @@ class _Parser:
                 source_sequences=sequences, details=action_evidence,
             )
             return ([negatrait] if negatrait is not None else []) + [move_event]
+
+        bloodlust_bite = self._bloodlust_bite_event(
+            messages, actor, clock, sequences, evidence
+        )
+        if bloodlust_bite is not None:
+            results = [bloodlust_bite]
+            if ball_steps:
+                rolls = self._roll_effects(messages, actor)
+                roll_names = [effect.type for effect in rolls]
+                kind = next((
+                    name for name in (
+                        "pick_up", "catch", "pass", "interception",
+                        "bounce", "scatter", "throw_in",
+                    ) if name in roll_names
+                ), "ball_action")
+                results.append(self._event(
+                    kind, clock, actor=self._who(self.active_player_id),
+                    effects=tuple(rolls), source_sequences=sequences, details=evidence,
+                ))
+            return results
+
         animal_savagery = self._animal_savagery_event(
             messages, actor, target, clock, sequences, evidence
         )
@@ -1211,6 +1305,8 @@ class _Parser:
                 "PlayerStep", "BallStep", "ResultUseAction", "ResultDoMove",
                 "ResultMoveOutcome", "ResultNoRollSuccess", "ResultSkillUsage",
                 "ResultTeamRerollUsage", "ResultFollowUp", "ResultPushBack",
+                "ResultAddPlayerEffect", "ResultEndPlayerEffect",
+                "ResultSequenceChanged",
             }:
                 self.unresolved[message.name] += 1
                 unknown.append(message)
@@ -1240,6 +1336,7 @@ class _Parser:
                 outcome="turnover" if turnover else "completed", details=_data(node))
             self.cause_event_id = None
             self.special_card = None
+            self.pending_bloodlust.clear()
             self.active_player_id = None
             return event
         if kind in {"KickOffTable", "WeatherRoll", "BrilliantCoaching"}:
@@ -1253,7 +1350,9 @@ class _Parser:
             return self._event(_snake_case(kind), clock, actor=self._who(self.active_player_id),
                                details=_data(node))
         ignored = {"RulesEngineStandBy", "ActiveTimerChanged", "StartActiveTimer",
-                   "PauseActiveTimer", "ActiveGamerChanged", "GamersAreReady"}
+                   "PauseActiveTimer", "ActiveGamerChanged", "GamersAreReady",
+                   "EndActivePlayerTurn", "EndPlayerEffect",
+                   "SetupBringPlayerOn", "SetupTakePlayerOut"}
         before_match = {"EndInducements", "FanFactor", "InducementsData", "JourneyMen",
                         "KickingChoice", "LegalKickers", "NewInducementsTurn",
                         "QuestionKickingChoice", "SetupMovePitchPlayer", "SetUpConfiguration",

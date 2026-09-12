@@ -152,6 +152,7 @@ class StepType(IntEnum):
     THROW_A_ROCK = 28
     INTERCEPTION = 29
     MULTIPLE_BLOCK = 30
+    BLOODLUST_BITE = 34
 
 
 class RollType(IntEnum):
@@ -210,12 +211,14 @@ class RollType(IntEnum):
     BRAWLER = 57
     LASTING_INJURY = 58
     PITCH_INVASION = 59
+    HYPNOTIC_GAZE = 66
     CHAINSAW = 67
     TAKE_ROOT = 68
     LONER = 71
     SHADOWING = 73
     ANIMOSITY = 74
     SWARMING = 75
+    BLOODLUST = 96
 
 
 class SpecialCard(IntEnum):
