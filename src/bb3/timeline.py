@@ -295,11 +295,14 @@ class ReplayTimeline:
         messages = details.get("messages", [])
         if not isinstance(messages, list):
             return []
-        effects_by_type: dict[str, TimelineEffect] = {}
+        effects_by_type: dict[str, list[TimelineEffect]] = defaultdict(list)
         for effect in event.effects:
-            effects_by_type[{"gfi": "rush", "armor_roll": "armour"}.get(
-                effect.type, effect.type
-            )] = effect
+            effect_type = {
+                "gfi": "rush",
+                "armor_roll": "armour",
+                "armour_roll": "armour",
+            }.get(effect.type, effect.type)
+            effects_by_type[effect_type].append(effect)
         checks: list[dict[str, Any]] = []
         pending: dict[str, Any] | None = None
         team_reroll_used: bool | None = None
@@ -310,7 +313,8 @@ class ReplayTimeline:
             code = _int(str(data.get("RollType"))) if data.get("RollType") is not None else None
             kind = cls._check_type(code)
             check: dict[str, Any] = {"type": kind}
-            effect = effects_by_type.get(kind)
+            effects = effects_by_type.get(kind, [])
+            effect = effects.pop(0) if effects else None
             subject = cls._participant_ref(effect.subject if effect else event.actor)
             if subject is not None:
                 check["subject"] = subject
@@ -691,7 +695,11 @@ class ReplayTimeline:
                 item["outcome"] = event.outcome
             if checks:
                 item["checks"] = checks
-            effect_aliases = {"gfi": "rush", "armor_roll": "armour"}
+            effect_aliases = {
+                "gfi": "rush",
+                "armor_roll": "armour",
+                "armour_roll": "armour",
+            }
             effects = [
                 effect for effect in event.effects
                 if effect_aliases.get(effect.type, effect.type) not in check_types
@@ -1050,9 +1058,24 @@ class _Parser:
             elif code in {BlockOutcome.DEFENDER_DOWN, BlockOutcome.DEFENDER_PUSHED_DOWN}:
                 effects.append(TimelineEffect("knockdown", target))
             armour = [x for x in self._find(messages, "ResultRoll") if _text(x.node, "RollType") == "10"]
-            if armour:
-                roll = armour[-1].node
-                effects.append(TimelineEffect("armour_roll", target, _text(roll, "Outcome") == "1", _data(roll)))
+            armour_subjects: list[TimelineParticipant | None] = []
+            if code == BlockOutcome.ATTACKER_DOWN:
+                armour_subjects = [actor]
+            elif code in {BlockOutcome.BOTH_DOWN, BlockOutcome.BOTH_WRESTLE_DOWN}:
+                armour_subjects = [actor, target]
+            elif code in {BlockOutcome.DEFENDER_DOWN, BlockOutcome.DEFENDER_PUSHED_DOWN}:
+                armour_subjects = [target]
+            for index, armour_roll in enumerate(armour):
+                subject = (
+                    armour_subjects[index]
+                    if index < len(armour_subjects)
+                    else target or actor
+                )
+                effects.append(TimelineEffect(
+                    "armour_roll", subject,
+                    _text(armour_roll.node, "Outcome") == "1",
+                    _data(armour_roll.node),
+                ))
             effects.extend(self._damage_effects(messages, target))
             block_event = self._event(
                 "block", clock, actor=actor, target=target,

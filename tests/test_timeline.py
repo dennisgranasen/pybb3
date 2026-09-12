@@ -42,9 +42,52 @@ def test_multisequence_block_becomes_one_actor_target_event(tmp_path):
     assert [effect.type for effect in event.effects] == ["push", "knockdown", "armour_roll", "injury"]
     assert all(effect.subject.name == "Bob" for effect in event.effects)
     assert event.effects[2].outcome is True
+
+    narrative = timeline.to_narrative_dict(include_moves=True)
+    narrative_block = next(item for item in narrative["events"] if item["id"] == event.id)
+    armour_check = next(
+        check for check in narrative_block["checks"] if check["type"] == "armour"
+    )
+    assert armour_check["subject"] == {"kind": "player", "id": 2}
+    assert not any(
+        effect["type"] == "armour_roll"
+        for effect in narrative_block.get("effects", [])
+    )
+
     assert timeline.before_match["teams"][0]["name"] == "Home"
     assert timeline.after_match["Score"] == "1"
     assert timeline.save(tmp_path / "timeline.json").is_file()
+
+
+def test_both_down_assigns_armour_rolls_to_both_players():
+    roster0 = f"<TeamRoster><Players><PlayerData><Name>{b64('Attacker')}</Name><Id>1</Id></PlayerData></Players><Name>{b64('Home')}</Name><Team><TeamId>0</TeamId></Team></TeamRoster>"
+    roster1 = f"<TeamRoster><Players><PlayerData><Name>{b64('Defender')}</Name><Id>2</Id></PlayerData></Players><Name>{b64('Away')}</Name><Team><TeamId>1</TeamId></Team></TeamRoster>"
+    step = "<PlayerStep><PlayerId>1</PlayerId><TargetId>2</TargetId><StepType>6</StepType></PlayerStep>"
+    block = "<ResultBlockOutcome><AttackerId>1</AttackerId><DefenderId>2</DefenderId><Outcome>1</Outcome></ResultBlockOutcome>"
+    attacker_armour = "<ResultRoll><RollType>10</RollType><Requirement>10</Requirement><Dice><Die><Value>1</Value></Die><Die><Value>1</Value></Die></Dice><Outcome>0</Outcome></ResultRoll>"
+    defender_armour = "<ResultRoll><RollType>10</RollType><Requirement>10</Requirement><Dice><Die><Value>4</Value></Die><Die><Value>4</Value></Die></Dice><Outcome>0</Outcome></ResultRoll>"
+    xml = f"""<Replay><Rosters>{roster0}{roster1}</Rosters><ReplayStep>
+      {sequence(
+          message('PlayerStep', step),
+          message('ResultBlockOutcome', block),
+          message('ResultRoll', attacker_armour),
+          message('ResultRoll', defender_armour),
+      )}
+    </ReplayStep></Replay>""".encode()
+
+    timeline = Replay.from_xml(xml).timeline()
+    event = next(event for event in timeline.events if event.type == "block")
+
+    armour_effects = [effect for effect in event.effects if effect.type == "armour_roll"]
+    assert [effect.subject.id for effect in armour_effects] == [1, 2]
+
+    narrative = timeline.to_narrative_dict(include_moves=True)
+    narrative_block = next(item for item in narrative["events"] if item["id"] == event.id)
+    armour_checks = [
+        check for check in narrative_block["checks"] if check["type"] == "armour"
+    ]
+    assert [check["subject"]["id"] for check in armour_checks] == [1, 2]
+    assert [check["attempts"][0]["dice"] for check in armour_checks] == [[1, 1], [4, 4]]
 
 
 def test_failed_move_assigns_injury_to_moving_player():
