@@ -395,3 +395,71 @@ def test_narrative_checks_merge_skill_reroll_into_same_check():
         ],
         "outcome": "passed", "reroll_used": True,
     }]
+
+
+def test_failed_dodge_with_armour_held_is_still_failed():
+    step = "<PlayerStep><PlayerId>7</PlayerId><TargetId>-1</TargetId><StepType>1</StepType></PlayerStep>"
+    dodge = "<ResultRoll><Requirement>2</Requirement><Dice><Die><Value>1</Value></Die></Dice><RollType>2</RollType><Outcome>0</Outcome></ResultRoll>"
+    move = "<ResultMoveOutcome><Moved>0</Moved></ResultMoveOutcome>"
+    armour = "<ResultRoll><Requirement>8</Requirement><Dice><Die><Value>2</Value></Die><Die><Value>3</Value></Die></Dice><RollType>10</RollType><Outcome>0</Outcome></ResultRoll>"
+    xml = f"<Replay><Rosters/><ReplayStep>{sequence(message('PlayerStep', step), message('ResultRoll', dodge), message('ResultMoveOutcome', move), message('ResultRoll', armour))}</ReplayStep></Replay>".encode()
+
+    timeline = Replay.from_xml(xml).timeline()
+
+    assert timeline.events[0].type == "move"
+    assert timeline.events[0].outcome == "failed"
+    narrative = timeline.to_narrative_dict()["events"][0]
+    assert narrative["outcome"] == "failed"
+    assert narrative["checks"][0]["type"] == "dodge"
+    assert narrative["checks"][0]["outcome"] == "failed"
+
+
+def test_skill_reroll_that_succeeds_keeps_move_completed():
+    step = "<PlayerStep><PlayerId>7</PlayerId><TargetId>-1</TargetId><StepType>1</StepType></PlayerStep>"
+    failed = "<ResultRoll><Requirement>2</Requirement><Dice><Die><Value>1</Value></Die></Dice><RollType>2</RollType><Outcome>0</Outcome></ResultRoll>"
+    skill = "<ResultSkillUsage><PlayerId>7</PlayerId><Skill>7</Skill><Used>1</Used></ResultSkillUsage>"
+    passed = "<ResultRoll><Requirement>2</Requirement><Dice><Die><Value>4</Value></Die></Dice><RollType>2</RollType><Outcome>1</Outcome></ResultRoll>"
+    move = "<ResultMoveOutcome><Moved>1</Moved></ResultMoveOutcome>"
+    xml = f"<Replay><Rosters/><ReplayStep>{sequence(message('PlayerStep', step), message('ResultRoll', failed), message('ResultSkillUsage', skill), message('ResultRoll', passed), message('ResultMoveOutcome', move))}</ReplayStep></Replay>".encode()
+
+    timeline = Replay.from_xml(xml).timeline()
+
+    assert timeline.events[0].outcome == "completed"
+    narrative = timeline.to_narrative_dict()["events"][0]
+    assert narrative["checks"][0]["outcome"] == "passed"
+    assert narrative["checks"][0]["attempts"][-1]["reroll"] == "dodge"
+
+
+def test_turn_owner_is_not_retroactively_changed_by_next_active_gamer():
+    roster0 = f"<TeamRoster><Players><PlayerData><Name>{b64('Elf')}</Name><Id>1</Id></PlayerData></Players><Name>{b64('Elves')}</Name><Team><TeamId>0</TeamId></Team></TeamRoster>"
+    roster1 = f"<TeamRoster><Players><PlayerData><Name>{b64('Nun')}</Name><Id>2</Id></PlayerData></Players><Name>{b64('Nuns')}</Name><Team><TeamId>1</TeamId></Team></TeamRoster>"
+    block_step = "<PlayerStep><PlayerId>1</PlayerId><TargetId>2</TargetId><StepType>6</StepType></PlayerStep>"
+    block = "<ResultBlockOutcome><AttackerId>1</AttackerId><DefenderId>2</DefenderId><Outcome>4</Outcome></ResultBlockOutcome>"
+    board = "<BoardState><ListTeams><TeamState><GameTurn>1</GameTurn></TeamState><TeamState><GameTurn>1</GameTurn></TeamState></ListTeams></BoardState>"
+    xml = f"""<Replay><Rosters>{roster0}{roster1}</Rosters><ReplayStep>
+      <EventNewGamePhase><Phase>5</Phase></EventNewGamePhase><EventActiveGamerChanged/>
+      {sequence(message('PlayerStep', block_step), message('ResultBlockOutcome', block))}
+      <EventActiveGamerChanged><NewActiveGamer>1</NewActiveGamer></EventActiveGamerChanged>
+      <EventEndTurn><Reason>1</Reason></EventEndTurn>{board}
+    </ReplayStep></Replay>""".encode()
+
+    timeline = Replay.from_xml(xml).timeline()
+
+    assert timeline.turns[0].team_id == 0
+    assert timeline.turns[0].events[0].type == "block"
+    assert timeline.turns[0].events[0].actor.team_id == 0
+
+
+def test_touchdown_board_release_does_not_emit_ball_loose():
+    roster = f"<TeamRoster><Players><PlayerData><Name>{b64('Scorer')}</Name><Id>7</Id></PlayerData></Players><Name>{b64('Home')}</Name><Team><TeamId>0</TeamId></Team></TeamRoster>"
+    held = "<BoardState><Ball><IsHeld>1</IsHeld><Carrier>7</Carrier></Ball></BoardState>"
+    loose = "<BoardState><Ball><IsHeld>0</IsHeld></Ball></BoardState>"
+    xml = f"""<Replay><Rosters>{roster}</Rosters>
+      <ReplayStep>{held}</ReplayStep>
+      <ReplayStep><EventTouchdown><PlayerId>7</PlayerId></EventTouchdown>{loose}</ReplayStep>
+    </Replay>""".encode()
+
+    timeline = Replay.from_xml(xml).timeline()
+
+    assert any(event.type == "touchdown" for event in timeline.events)
+    assert not any(event.type == "ball_loose" for event in timeline.events)

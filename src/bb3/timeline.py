@@ -436,6 +436,93 @@ class ReplayTimeline:
             )
         return summary
 
+    @staticmethod
+    def _same_narrative_context(left: dict[str, Any], right: dict[str, Any]) -> bool:
+        """Return True when two narrative events belong to the same playable turn."""
+        comparable = False
+        for key in ("half", "drive", "team_turn", "team_id"):
+            left_value, right_value = left.get(key), right.get(key)
+            if left_value is None or right_value is None:
+                continue
+            comparable = True
+            if left_value != right_value:
+                return False
+        return comparable
+
+    @classmethod
+    def _group_narrative_sequences(cls, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Collapse one rules action and its immediate consequences into one narrative event."""
+        grouped: list[dict[str, Any]] = []
+        index = 0
+        while index < len(events):
+            event = events[index]
+
+            # A touchdown ends possession by definition. The following board-state
+            # ball release is not a fumble and must not become a second event.
+            if event.get("type") == "ball_loose" and grouped:
+                previous = grouped[-1]
+                same_player = (
+                    previous.get("type") == "touchdown"
+                    and previous.get("actor") is not None
+                    and event.get("target") == previous.get("actor")
+                )
+                if same_player:
+                    index += 1
+                    continue
+
+            if event.get("type") == "pass":
+                merged = dict(event)
+                merged_checks = list(event.get("checks", []))
+                merged_effects = list(event.get("effects", []))
+                details = dict(event.get("details", {}))
+                grouped_ids: list[int | str] = []
+                follow = index + 1
+                while follow < len(events):
+                    candidate = events[follow]
+                    candidate_type = candidate.get("type")
+                    if candidate_type not in {"interception", "catch", "ball_loose"}:
+                        break
+                    if not cls._same_narrative_context(event, candidate):
+                        break
+                    grouped_ids.append(candidate.get("id"))
+                    merged_checks.extend(candidate.get("checks", []))
+                    merged_effects.extend(candidate.get("effects", []))
+                    if candidate_type == "ball_loose":
+                        details["ball_loose"] = True
+                    follow += 1
+                if grouped_ids:
+                    details["grouped_event_ids"] = grouped_ids
+                    merged["checks"] = merged_checks
+                    if merged_effects:
+                        merged["effects"] = merged_effects
+                    merged["details"] = details
+                    grouped.append(merged)
+                    index = follow
+                    continue
+
+            if event.get("type") == "turn_end" and event.get("outcome") == "turnover":
+                # Keep the turnover as a property of the action that caused it,
+                # not as another visual/narrative action.
+                for previous_index in range(len(grouped) - 1, -1, -1):
+                    previous = grouped[previous_index]
+                    if not cls._same_narrative_context(previous, event):
+                        continue
+                    if previous.get("type") in {"ball_loose", "bounce", "scatter"}:
+                        continue
+                    updated = dict(previous)
+                    details = dict(updated.get("details", {}))
+                    details["turnover"] = True
+                    details["turnover_event_id"] = event.get("id")
+                    updated["details"] = details
+                    grouped[previous_index] = updated
+                    break
+                index += 1
+                continue
+
+            grouped.append(event)
+            index += 1
+        return grouped
+
     def to_narrative_dict(
         self, *, include_moves: bool = False, include_evidence: bool = False,
     ) -> dict[str, Any]:
@@ -462,7 +549,17 @@ class ReplayTimeline:
                 continue
             if event.type == "roll" and not include_evidence:
                 continue
-            item: dict[str, Any] = {"id": event.id, "type": event.type}
+            checks = self._narrative_checks(event)
+            check_types = {check["type"] for check in checks}
+            narrative_type = event.type
+            if narrative_type == "unclassified":
+                # Some BB3 pass/interception/catch sequences do not carry a
+                # PlayerStep in every protocol sequence. The roll purpose is
+                # still unambiguous and is better than leaking "unclassified".
+                narrative_type = next((kind for kind in (
+                    "pass", "interception", "catch", "handoff", "pick_up",
+                ) if kind in check_types), narrative_type)
+            item: dict[str, Any] = {"id": event.id, "type": narrative_type}
             item.update(context.get(event.id, {}))
             if event.clock is not None:
                 item["clock"] = event.clock
@@ -472,10 +569,8 @@ class ReplayTimeline:
                     item[key] = reference
             if event.outcome is not None:
                 item["outcome"] = event.outcome
-            checks = self._narrative_checks(event)
             if checks:
                 item["checks"] = checks
-            check_types = {check["type"] for check in checks}
             effect_aliases = {"gfi": "rush", "armor_roll": "armour"}
             effects = [
                 effect for effect in event.effects
@@ -492,6 +587,8 @@ class ReplayTimeline:
             if details:
                 item["details"] = details
             events.append(item)
+
+        events = self._group_narrative_sequences(events)
 
         ignored_before = {
             "setup_move_pitch_player", "legal_kickers", "set_up_configuration",
@@ -830,8 +927,13 @@ class _Parser:
         }
         if step_code in action_types:
             rolls = self._find(messages, "ResultRoll")
-            relevant = next((x for x in reversed(rolls) if _int(_text(x.node, "RollType")) in {
-                RollType.PASS, RollType.CATCH, RollType.INTERCEPTION}), None)
+            expected_roll = {
+                StepType.PASS: RollType.PASS,
+                StepType.CATCH: RollType.CATCH,
+                StepType.INTERCEPTION: RollType.INTERCEPTION,
+            }.get(StepType(step_code))
+            relevant = next((x for x in reversed(rolls)
+                             if _int(_text(x.node, "RollType")) == expected_roll), None)
             success = None if relevant is None else _text(relevant.node, "Outcome") != "0"
             effects = self._roll_effects(messages, actor) + self._damage_effects(messages, target)
             return [self._event(action_types[StepType(step_code)], clock, actor=actor, target=target,
@@ -839,9 +941,18 @@ class _Parser:
         moves = self._find(messages, "ResultMoveOutcome")
         if steps and moves:
             effects = self._roll_effects(messages, actor) + self._damage_effects(messages, actor)
-            # An injury following the movement belongs to the moving player
-            # (typically a failed dodge/rush). ``Moved`` is not a success flag.
-            failed = any(effect.type == "injury" for effect in effects)
+            # Movement ends on the final unresolved Dodge/Rush failure. Earlier
+            # failed attempts can legitimately be followed by a skill/team
+            # reroll, so only the last movement roll decides the action result.
+            movement_rolls = [
+                roll for roll in self._find(messages, "ResultRoll")
+                if _int(_text(roll.node, "RollType")) in {RollType.DODGE, RollType.GFI}
+            ]
+            failed = (
+                _text(movement_rolls[-1].node, "Outcome") == "0"
+                if movement_rolls
+                else any(effect.type == "injury" for effect in effects)
+            )
             evidence.update({"from": _data(_direct(steps[0].node, "CellFrom")),
                              "to": _data(_direct(steps[-1].node, "CellTo"))})
             if target is not None:
@@ -1015,15 +1126,25 @@ class _Parser:
         pending: list[_Message] = []
         signature: tuple[Any, ...] | None = None
         active_team: int | None = None
+        turn_owner: int | None = None
         game_phase: int | None = None
         drive = 0
         sequence = 0
 
+        def event_team(items: list[TimelineEvent]) -> int | None:
+            for item in items:
+                if item.actor is not None and item.actor.team_id is not None:
+                    return item.actor.team_id
+            return None
+
         def flush() -> None:
-            nonlocal pending
+            nonlocal pending, turn_owner
             reduced = self._reduce(pending)
             events.extend(reduced)
             current.extend(reduced)
+            if turn_owner is None and reduced:
+                inferred_team = event_team(reduced)
+                turn_owner = inferred_team if inferred_team is not None else active_team
             pending = []
 
         def team_turn(board: ET.Element | None, team_id: int | None) -> int | None:
@@ -1073,33 +1194,57 @@ class _Parser:
                         if changed_team is not None:
                             active_team = changed_team
                             self.active_team_id = changed_team
+                    event_name = _name(outer)
+                    if event_name == "EventEndTurn":
+                        # Flush while active_player_id still identifies the actor.
+                        # EventEndTurn clears it in _outer().
+                        flush()
                     semantic = self._outer(outer, clock)
                     if semantic:
-                        flush()
+                        if event_name != "EventEndTurn":
+                            flush()
                         events.append(semantic)
                         current.append(semantic)
+                        if turn_owner is None and semantic.type != "turn_end":
+                            turn_owner = (
+                                semantic.actor.team_id
+                                if semantic.actor is not None and semantic.actor.team_id is not None
+                                else active_team
+                            )
                         if semantic.type == "turn_end":
                             finishing_type = _text(outer, "FinishingTurnType")
+                            owner = turn_owner if turn_owner is not None else active_team
                             if finishing_type not in {"5", "6"}:
-                                turn = team_turn(board, active_team)
+                                turn = team_turn(board, owner)
                                 half = None if turn is None else (turn - 1) // 8 + 1
                                 within_half = None if turn is None else (turn - 1) % 8 + 1
                                 turns.append(TimelineTurn(
-                                    len(turns) + 1, active_team, half, drive,
+                                    len(turns) + 1, owner, half, drive,
                                     within_half, tuple(current)
                                 ))
-                            current, signature = [], None
+                            current, signature, turn_owner = [], None, None
             possession = self._possession_event(board, clock)
             if possession is not None:
-                events.append(possession)
-                current.append(possession)
+                touchdown = events[-1] if events else None
+                touchdown_release = (
+                    touchdown is not None
+                    and touchdown.type == "touchdown"
+                    and possession.type == "ball_loose"
+                    and touchdown.actor is not None
+                    and possession.target is not None
+                    and touchdown.actor.id == possession.target.id
+                )
+                if not touchdown_release:
+                    events.append(possession)
+                    current.append(possession)
         flush()
         if current and game_phase != 6:
-            turn = team_turn(board, active_team)
+            owner = turn_owner if turn_owner is not None else active_team
+            turn = team_turn(board, owner)
             half = None if turn is None else (turn - 1) // 8 + 1
             within_half = None if turn is None else (turn - 1) % 8 + 1
             turns.append(TimelineTurn(
-                len(turns) + 1, active_team, half, drive, within_half, tuple(current)
+                len(turns) + 1, owner, half, drive, within_half, tuple(current)
             ))
         return ReplayTimeline(before, tuple(turns), after if isinstance(after, dict) else {},
                               tuple(events), dict(sorted(self.unresolved.items())))
