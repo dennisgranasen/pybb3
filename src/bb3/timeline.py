@@ -1278,20 +1278,33 @@ class _Parser:
         drive = 0
         sequence = 0
 
-        def event_team(items: list[TimelineEvent]) -> int | None:
-            for item in items:
-                if item.actor is not None and item.actor.team_id is not None:
-                    return item.actor.team_id
-            return None
+        active_turn_actions = {
+            "move", "block", "pass", "handoff", "foul", "throw_team_mate",
+            "stand_up", "negatrait_check",
+        }
+
+        def turn_action_team(items: list[TimelineEvent]) -> int | None:
+            teams = {
+                item.actor.team_id
+                for item in items
+                if (
+                    item.type in active_turn_actions
+                    and item.actor is not None
+                    and item.actor.team_id is not None
+                )
+            }
+            return next(iter(teams)) if len(teams) == 1 else None
 
         def flush() -> None:
             nonlocal pending, turn_owner
             reduced = self._reduce(pending)
             events.extend(reduced)
             current.extend(reduced)
-            if turn_owner is None and reduced:
-                inferred_team = event_team(reduced)
-                turn_owner = inferred_team if inferred_team is not None else active_team
+            inferred_team = turn_action_team(reduced)
+            if inferred_team is not None:
+                turn_owner = inferred_team
+            elif turn_owner is None and reduced:
+                turn_owner = active_team
             pending = []
 
         def team_turn(board: ET.Element | None, team_id: int | None) -> int | None:
@@ -1377,7 +1390,13 @@ class _Parser:
                             )
                         if semantic.type == "turn_end":
                             finishing_type = _text(outer, "FinishingTurnType")
-                            owner = turn_owner if turn_owner is not None else active_team
+                            action_owner = turn_action_team(current)
+                            owner = (
+                                action_owner
+                                if action_owner is not None
+                                else turn_owner if turn_owner is not None
+                                else active_team
+                            )
                             if finishing_type not in {"5", "6"}:
                                 turn = team_turn(board, owner)
                                 half = None if turn is None else (turn - 1) // 8 + 1
@@ -1403,7 +1422,13 @@ class _Parser:
                     current.append(possession)
         flush()
         if current and game_phase != 6:
-            owner = turn_owner if turn_owner is not None else active_team
+            action_owner = turn_action_team(current)
+            owner = (
+                action_owner
+                if action_owner is not None
+                else turn_owner if turn_owner is not None
+                else active_team
+            )
             turn = team_turn(board, owner)
             half = None if turn is None else (turn - 1) // 8 + 1
             within_half = None if turn is None else (turn - 1) % 8 + 1

@@ -463,6 +463,27 @@ def test_skill_reroll_that_succeeds_keeps_move_completed():
     assert narrative["checks"][0]["attempts"][-1]["reroll"] == "dodge"
 
 
+def _assert_active_actions_match_turn_team(timeline):
+    active_actions = {
+        "move", "block", "pass", "handoff", "foul", "throw_team_mate",
+        "stand_up", "negatrait_check",
+    }
+    errors = []
+    for turn in timeline.turns:
+        for event in turn.events:
+            if event.type not in active_actions:
+                continue
+            actor = event.actor
+            if actor is None or actor.kind != "player" or actor.team_id is None:
+                continue
+            if actor.team_id != turn.team_id:
+                errors.append(
+                    f"turn={turn.number} event={event.id} type={event.type} "
+                    f"actor={actor.id} actor_team={actor.team_id} turn_team={turn.team_id}"
+                )
+    assert errors == []
+
+
 def test_turn_owner_is_not_retroactively_changed_by_next_active_gamer():
     roster0 = f"<TeamRoster><Players><PlayerData><Name>{b64('Elf')}</Name><Id>1</Id></PlayerData></Players><Name>{b64('Elves')}</Name><Team><TeamId>0</TeamId></Team></TeamRoster>"
     roster1 = f"<TeamRoster><Players><PlayerData><Name>{b64('Nun')}</Name><Id>2</Id></PlayerData></Players><Name>{b64('Nuns')}</Name><Team><TeamId>1</TeamId></Team></TeamRoster>"
@@ -479,8 +500,31 @@ def test_turn_owner_is_not_retroactively_changed_by_next_active_gamer():
     timeline = Replay.from_xml(xml).timeline()
 
     assert timeline.turns[0].team_id == 0
-    assert timeline.turns[0].events[0].type == "block"
-    assert timeline.turns[0].events[0].actor.team_id == 0
+    block_event = next(
+        event for event in timeline.turns[0].events
+        if event.type == "block"
+    )
+    assert block_event.actor.team_id == 0
+    _assert_active_actions_match_turn_team(timeline)
+
+
+def test_active_action_actor_overrides_stale_active_gamer():
+    roster0 = f"<TeamRoster><Players><PlayerData><Name>{b64('Elf')}</Name><Id>1</Id></PlayerData></Players><Name>{b64('Elves')}</Name><Team><TeamId>0</TeamId></Team></TeamRoster>"
+    roster1 = f"<TeamRoster><Players><PlayerData><Name>{b64('Nun')}</Name><Id>2</Id></PlayerData></Players><Name>{b64('Nuns')}</Name><Team><TeamId>1</TeamId></Team></TeamRoster>"
+    block_step = "<PlayerStep><PlayerId>1</PlayerId><TargetId>2</TargetId><StepType>6</StepType></PlayerStep>"
+    block = "<ResultBlockOutcome><AttackerId>1</AttackerId><DefenderId>2</DefenderId><Outcome>4</Outcome></ResultBlockOutcome>"
+    board = "<BoardState><ListTeams><TeamState><GameTurn>1</GameTurn></TeamState><TeamState><GameTurn>1</GameTurn></TeamState></ListTeams></BoardState>"
+    xml = f"""<Replay><Rosters>{roster0}{roster1}</Rosters><ReplayStep>
+      <EventNewGamePhase><Phase>5</Phase></EventNewGamePhase>
+      <EventActiveGamerChanged><NewActiveGamer>1</NewActiveGamer></EventActiveGamerChanged>
+      {sequence(message('PlayerStep', block_step), message('ResultBlockOutcome', block))}
+      <EventEndTurn><Reason>1</Reason></EventEndTurn>{board}
+    </ReplayStep></Replay>""".encode()
+
+    timeline = Replay.from_xml(xml).timeline()
+
+    assert timeline.turns[0].team_id == 0
+    _assert_active_actions_match_turn_team(timeline)
 
 
 def test_touchdown_board_release_does_not_emit_ball_loose():

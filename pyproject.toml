@@ -22,8 +22,9 @@ bb3 = "bb3.cli:main"
 where = ["src"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 markers = [
     "live: accesses the live Steam/BB3 services and requires PYBB3_RUN_LIVE_TESTS=1",
     "destructive: mutates live BB3 account state and additionally requires PYBB3_ALLOW_DESTRUCTIVE_TESTS=1",
+    "testdata: runs offline regression checks against local testdata/*.bbr files",
 ]
