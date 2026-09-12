@@ -59,6 +59,49 @@ def test_multisequence_block_becomes_one_actor_target_event(tmp_path):
     assert timeline.save(tmp_path / "timeline.json").is_file()
 
 
+def test_block_outcome_continues_past_trailing_player_step_signature():
+    block_step = (
+        "<PlayerStep><PlayerId>1</PlayerId><TargetId>2</TargetId>"
+        "<StepType>6</StepType><State>1</State></PlayerStep>"
+    )
+    completed_block_step = (
+        "<PlayerStep><PlayerId>1</PlayerId><TargetId>2</TargetId>"
+        "<StepType>6</StepType><State>3</State></PlayerStep>"
+    )
+    catch_step = (
+        "<PlayerStep><PlayerId>1</PlayerId><TargetId>-1</TargetId>"
+        "<StepType>4</StepType><State>3</State></PlayerStep>"
+    )
+    block_roll = (
+        "<ResultBlockRoll><RollType>3</RollType><Outcome>6</Outcome>"
+        "<NewRoll>1</NewRoll></ResultBlockRoll>"
+    )
+    push = "<ResultPushBack><PushedPlayerId>2</PushedPlayerId></ResultPushBack>"
+    outcome = (
+        "<ResultBlockOutcome><AttackerId>1</AttackerId><DefenderId>2</DefenderId>"
+        "<Outcome>6</Outcome><Follow>1</Follow></ResultBlockOutcome>"
+    )
+    armour = "<ResultRoll><RollType>10</RollType><Outcome>0</Outcome></ResultRoll>"
+    catch = "<ResultRoll><RollType>7</RollType><Outcome>1</Outcome></ResultRoll>"
+    board = "<BoardState><Ball><IsHeld>1</IsHeld><Carrier>1</Carrier></Ball></BoardState>"
+    xml = f"""<Replay><Rosters/>
+      <ReplayStep>{sequence(message('PlayerStep', block_step), message('ResultBlockRoll', block_roll), message('ResultPushBack', push), message('QuestionFollowUp', '<QuestionFollowUp/>'))}</ReplayStep>
+      <ReplayStep>{sequence(message('PlayerStep', completed_block_step), message('ResultFollowUp', '<ResultFollowUp><Follow>1</Follow></ResultFollowUp>'), message('ResultBlockOutcome', outcome), message('ResultRoll', armour), message('PlayerStep', catch_step), message('ResultRoll', catch))}{board}</ReplayStep>
+    </Replay>""".encode()
+
+    timeline = Replay.from_xml(xml).timeline()
+
+    assert [event.type for event in timeline.events] == ["block", "possession_gained"]
+    block = timeline.events[0]
+    assert block.actor.id == 1
+    assert block.target.id == 2
+    assert block.outcome == "defender_pushed_down"
+    assert block.source_sequences == (1, 2)
+    assert any(effect.type == "push" for effect in block.effects)
+    assert "ResultBlockRoll" not in timeline.unresolved
+    assert not timeline.unresolved
+
+
 def test_both_down_assigns_armour_rolls_to_both_players():
     roster0 = f"<TeamRoster><Players><PlayerData><Name>{b64('Attacker')}</Name><Id>1</Id></PlayerData></Players><Name>{b64('Home')}</Name><Team><TeamId>0</TeamId></Team></TeamRoster>"
     roster1 = f"<TeamRoster><Players><PlayerData><Name>{b64('Defender')}</Name><Id>2</Id></PlayerData></Players><Name>{b64('Away')}</Name><Team><TeamId>1</TeamId></Team></TeamRoster>"

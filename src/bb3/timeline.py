@@ -1301,6 +1301,33 @@ class _Parser:
         drive = 0
         sequence = 0
 
+        def incomplete_block_key(items: list[_Message]) -> tuple[int, int] | None:
+            """Return attacker/defender for a rolled block awaiting its outcome."""
+            if (
+                not self._find(items, "ResultBlockRoll")
+                or self._find(items, "ResultBlockOutcome")
+            ):
+                return None
+            for item in reversed(items):
+                if item.name != "PlayerStep":
+                    continue
+                if _int(_text(item.node, "StepType")) != StepType.BLOCK:
+                    continue
+                attacker = _int(_text(item.node, "PlayerId"))
+                defender = _int(_text(item.node, "TargetId"))
+                if attacker is not None and defender is not None and defender >= 0:
+                    return attacker, defender
+            return None
+
+        def completed_block_key(items: list[_Message]) -> tuple[int, int] | None:
+            """Return attacker/defender from a block outcome in this batch."""
+            outcome = next(iter(self._find(items, "ResultBlockOutcome")), None)
+            if outcome is None:
+                return None
+            attacker = _int(_text(outcome.node, "AttackerId"))
+            defender = _int(_text(outcome.node, "DefenderId"))
+            return None if attacker is None or defender is None else (attacker, defender)
+
         active_turn_actions = {
             "move", "block", "pass", "handoff", "foul", "throw_team_mate",
             "stand_up", "negatrait_check",
@@ -1353,7 +1380,18 @@ class _Parser:
                     new_sig = None if player_step is None else (
                         _int(_text(player_step.node, "PlayerId")), _int(_text(player_step.node, "TargetId")),
                         _text(player_step.node, "StepType"))
-                    if pending and new_sig is not None and signature is not None and new_sig != signature:
+                    # A block may span execute sequences.  In particular BB3 can
+                    # return ResultBlockOutcome in a sequence that later contains
+                    # another PlayerStep (for example a catch after the block).
+                    # The trailing step changes new_sig, but it must not split the
+                    # preceding ResultBlockRoll from its matching block outcome.
+                    pending_block = incomplete_block_key(pending)
+                    continues_block = (
+                        pending_block is not None
+                        and pending_block == completed_block_key(decoded)
+                    )
+                    if (pending and new_sig is not None and signature is not None
+                            and new_sig != signature and not continues_block):
                         flush()
                     pending.extend(decoded)
                     if new_sig is not None:
@@ -1429,6 +1467,12 @@ class _Parser:
                                     within_half, tuple(current)
                                 ))
                             current, signature, turn_owner = [], None, None
+            # Once the outcome has arrived the block is complete.  Flush it
+            # before deriving possession from BoardState so a ball pickup caused
+            # by the block cannot appear before the block itself in the timeline.
+            if pending and self._find(pending, "ResultBlockOutcome"):
+                flush()
+
             possession = self._possession_event(board, clock)
             if possession is not None:
                 touchdown = events[-1] if events else None
