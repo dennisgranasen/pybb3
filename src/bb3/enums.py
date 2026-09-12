@@ -118,6 +118,8 @@ class SequenceType(IntEnum):
     SHADOWING = 11
     TREACHEROUS_TRAP = 12
     KICK_OFF = 13
+    BALL_AND_CHAIN = 15
+    BOMB = 16
 
 
 class StepType(IntEnum):
@@ -152,6 +154,9 @@ class StepType(IntEnum):
     THROW_A_ROCK = 28
     INTERCEPTION = 29
     MULTIPLE_BLOCK = 30
+    BALL_AND_CHAIN_MOVE = 31
+    BOMB_THROW = 32
+    BOMB_EXPLOSION = 33
     BLOODLUST_BITE = 34
 
 
@@ -218,6 +223,8 @@ class RollType(IntEnum):
     SHADOWING = 73
     ANIMOSITY = 74
     SWARMING = 75
+    BALL_AND_CHAIN_DIRECTION = 87
+    BOMB_EXPLOSION_HIT = 88
     BLOODLUST = 96
 
 
