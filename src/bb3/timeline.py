@@ -254,7 +254,8 @@ class ReplayTimeline:
         if code == RollType.CASUALTY and raw in CasualtyOutcome._value2member_map_:
             return CasualtyOutcome(raw).name.lower()
         if code in {RollType.BLOCK, RollType.SCATTER, RollType.THROW_IN,
-                    RollType.BOUNCE, RollType.DEVIATE, RollType.KICK_OFF_TABLE}:
+                    RollType.BOUNCE, RollType.DEVIATE, RollType.KICK_OFF_TABLE,
+                    RollType.BALL_AND_CHAIN_DIRECTION}:
             return raw
         if raw is None:
             return None
@@ -269,7 +270,11 @@ class ReplayTimeline:
         if dice:
             attempt["dice"] = dice
         code = _int(str(data.get("RollType"))) if data.get("RollType") is not None else None
-        outcome = cls._check_outcome(code, data.get("Outcome"))
+        outcome = (
+            dice[0]
+            if code == RollType.BALL_AND_CHAIN_DIRECTION and dice
+            else cls._check_outcome(code, data.get("Outcome"))
+        )
         if outcome is not None:
             attempt["outcome"] = outcome
         if reroll is not None:
@@ -902,12 +907,35 @@ class _Parser:
 
     def _roll_effects(self, messages: list[_Message], subject: TimelineParticipant | None) -> list[TimelineEffect]:
         effects: list[TimelineEffect] = []
-        for message in self._find(messages, "ResultRoll"):
+        bomb_target: TimelineParticipant | None = None
+        for message in messages:
+            if message.name == "PlayerStep":
+                if _int(_text(message.node, "StepType")) == StepType.BOMB_EXPLOSION:
+                    bomb_target = self._who(_int(_text(message.node, "PlayerId")))
+                continue
+            if message.name != "ResultRoll":
+                continue
             code = _int(_text(message.node, "RollType"))
-            if code in {RollType.ARMOR, RollType.INJURY, RollType.CASUALTY}:
+            if (
+                code in {RollType.ARMOR, RollType.INJURY, RollType.CASUALTY}
+                or (
+                    code in RollType._value2member_map_
+                    and RollType(code) in self._NEGATRAIT_ROLLS
+                )
+            ):
                 continue
             name = RollType(code).name.lower() if code in RollType._value2member_map_ else f"roll_{code}"
-            effects.append(TimelineEffect(name, subject, _text(message.node, "Outcome") != "0", _data(message.node)))
+            effect_subject = subject
+            outcome: str | int | bool | None = _text(message.node, "Outcome") != "0"
+            if code == RollType.BALL_AND_CHAIN_DIRECTION:
+                dice = _direct(message.node, "Dice")
+                outcome = _int(_text(dice, "Value"))
+            elif code == RollType.BOMB_EXPLOSION_HIT:
+                effect_subject = bomb_target or subject
+                bomb_target = None
+            effects.append(TimelineEffect(
+                name, effect_subject, outcome, _data(message.node)
+            ))
         return effects
 
     def _roll_details(self, message: _Message) -> dict[str, Any]:
@@ -1100,7 +1128,10 @@ class _Parser:
             actor = self._who(_int(_text(block, "AttackerId"))) or actor
             target = self._who(_int(_text(block, "DefenderId"))) or target
             code = _int(_text(block, "Outcome"))
-            effects: list[TimelineEffect] = []
+            effects: list[TimelineEffect] = [
+                effect for effect in self._roll_effects(messages, actor)
+                if effect.type == "ball_and_chain_direction"
+            ]
             pushes = self._find(messages, "ResultPushBack")
             if pushes:
                 push = pushes[-1].node
@@ -1292,7 +1323,15 @@ class _Parser:
         }:
             kind = StepType(step_code).name.lower()
             effects = self._roll_effects(messages, actor) + self._damage_effects(messages, target or actor)
-            return [self._event(kind, clock, actor=actor, target=target, effects=tuple(effects),
+            event_actor = actor
+            if step_code == StepType.BOMB_EXPLOSION:
+                thrower = next((
+                    step for step in steps
+                    if _int(_text(step.node, "StepType")) == StepType.BOMB_THROW
+                ), None)
+                if thrower is not None:
+                    event_actor = self._who(_int(_text(thrower.node, "PlayerId"))) or actor
+            return [self._event(kind, clock, actor=event_actor, target=target, effects=tuple(effects),
                 source_sequences=sequences, details=evidence)]
         damage = self._damage_effects(messages, target)
         if damage:
