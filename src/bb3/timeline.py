@@ -206,6 +206,8 @@ class ReplayTimeline:
             result["outcome"] = effect.outcome
         details: dict[str, Any] = {}
         if effect.details:
+            if "trait" in effect.details:
+                details["trait"] = effect.details["trait"]
             if "status_name" in effect.details:
                 details["status_name"] = effect.details["status_name"]
             source = cls._participant_ref(effect.details.get("source"))
@@ -385,6 +387,8 @@ class ReplayTimeline:
         if not isinstance(details, dict):
             return {}
         result: dict[str, Any] = {}
+        if details.get("trait") is not None:
+            result["trait"] = details["trait"]
         if details.get("declared_action") is not None:
             result["declared_action"] = details["declared_action"]
         action_target = cls._participant_ref(details.get("action_target"))
@@ -684,6 +688,40 @@ class _Parser:
         data = _data(message.node)
         return data if isinstance(data, dict) else {"value": data}
 
+    _NEGATRAIT_ROLLS: dict[RollType, str] = {
+        RollType.BONE_HEAD: "bone_head",
+        RollType.REALLY_STUPID: "really_stupid",
+        RollType.UNCHANNELLED_FURY: "unchannelled_fury",
+        RollType.ALWAYS_HUNGRY: "always_hungry",
+        RollType.TAKE_ROOT: "take_root",
+    }
+
+    def _negatrait_event(
+        self, messages: list[_Message], actor: TimelineParticipant | None,
+        clock: int | None, sequences: tuple[int, ...], evidence: dict[str, Any],
+    ) -> TimelineEvent | None:
+        """Normalize simple activation negatraits to one semantic event type."""
+        for roll in self._find(messages, "ResultRoll"):
+            roll_type = _int(_text(roll.node, "RollType"))
+            if roll_type not in RollType._value2member_map_:
+                continue
+            trait = self._NEGATRAIT_ROLLS.get(RollType(roll_type))
+            if trait is None:
+                continue
+
+            passed = _text(roll.node, "Outcome") != "0"
+            details = dict(evidence)
+            details.update({
+                "trait": trait,
+                "check": self._roll_details(roll),
+            })
+            return self._event(
+                "negatrait_check", clock, actor=actor,
+                outcome="passed" if passed else "failed",
+                source_sequences=sequences, details=details,
+            )
+        return None
+
     def _animal_savagery_event(
         self, messages: list[_Message], actor: TimelineParticipant | None,
         action_target: TimelineParticipant | None, clock: int | None,
@@ -718,12 +756,13 @@ class _Parser:
                 eligible = [participant for child in victims
                             if (participant := self._who(_int(child.text))) is not None]
         evidence.update({
+            "trait": "animal_savagery",
             "check": self._roll_details(roll),
             "action_target": asdict(action_target) if action_target else None,
             "eligible_targets": [asdict(x) for x in eligible],
         })
         return self._event(
-            "animal_savagery", clock, actor=actor, target=victim,
+            "negatrait_check", clock, actor=actor, target=victim,
             outcome=outcome, effects=tuple(effects), source_sequences=sequences,
             details=evidence,
         )
@@ -819,8 +858,11 @@ class _Parser:
             # event and attach Animal Savagery as its check.
             if step_code in StepType._value2member_map_ and step_code != StepType.ACTIVATION:
                 check = TimelineEffect(
-                    "animal_savagery", actor, animal_savagery.outcome,
-                    animal_savagery.details.get("check", {})
+                    "negatrait_check", actor, animal_savagery.outcome,
+                    {
+                        **animal_savagery.details.get("check", {}),
+                        "trait": "animal_savagery",
+                    },
                 )
                 return [self._event(
                     StepType(step_code).name.lower(), clock, actor=actor, target=target,
@@ -828,6 +870,11 @@ class _Parser:
                     source_sequences=sequences, details=evidence,
                 )]
             return [animal_savagery]
+
+        negatrait = self._negatrait_event(messages, actor, clock, sequences, evidence)
+        if negatrait is not None:
+            return [negatrait]
+
         foul_appearance = next((x for x in self._find(messages, "ResultRoll")
                                 if _int(_text(x.node, "RollType")) == RollType.FOUL_APPEARANCE), None)
         if foul_appearance is not None:

@@ -129,6 +129,20 @@ An effect's `subject` is not necessarily the parent event's `target`. For
 example, a failed Animal Savagery check during a blitz can affect a teammate,
 while the intended blitz target is stored separately.
 
+### Activation negatraits
+
+Activation negatraits use the common event/effect type `negatrait_check`.
+`details.trait` identifies the rule with a stable machine-readable name. Both
+successful and unsuccessful checks are retained in pybb3 output; condensed UI
+consumers may suppress successful checks.
+
+Currently normalized traits are `bone_head`, `really_stupid`,
+`unchannelled_fury`, `animal_savagery`, `always_hungry`, and `take_root`.
+Animal Savagery keeps its richer outcomes (`passed`, `teammate_hit`, or
+`activation_lost`) and its selected victim/effect chain. The other normalized
+checks use `passed` or `failed` while retaining the source roll as
+`details.check`.
+
 ### TimelineEvent
 
 ```json

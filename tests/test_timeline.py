@@ -211,7 +211,8 @@ def test_failed_animal_savagery_records_selected_teammate_and_damage():
 
     event = Replay.from_xml(xml).timeline().events[0]
 
-    assert event.type == "animal_savagery"
+    assert event.type == "negatrait_check"
+    assert event.details["trait"] == "animal_savagery"
     assert event.actor.id == 37 and event.target.id == 46
     assert event.outcome == "teammate_hit"
     assert event.details["declared_action"] == "blitz"
@@ -229,7 +230,8 @@ def test_passed_animal_savagery_has_no_victim():
 
     event = Replay.from_xml(xml).timeline().events[0]
 
-    assert event.type == "animal_savagery"
+    assert event.type == "negatrait_check"
+    assert event.details["trait"] == "animal_savagery"
     assert event.outcome == "passed"
     assert event.target is None
     assert event.details["action_target"]["id"] == 10
@@ -242,11 +244,44 @@ def test_passed_animal_savagery_is_attached_to_completed_stand_up():
     roll = "<ResultRoll><Requirement>4</Requirement><Dice><Die><Value>5</Value></Die></Dice><RollType>36</RollType><Outcome>1</Outcome></ResultRoll>"
     xml = f"<Replay><Rosters/><ReplayStep>{sequence(message('PlayerStep', activation), message('ResultUseAction', action), message('ResultRoll', roll), message('PlayerStep', stand_up))}</ReplayStep></Replay>".encode()
 
-    event = Replay.from_xml(xml).timeline().events[0]
+    timeline = Replay.from_xml(xml).timeline()
+    event = timeline.events[0]
 
     assert event.type == "stand_up"
-    assert event.effects[0].type == "animal_savagery"
+    assert event.effects[0].type == "negatrait_check"
+    assert event.effects[0].details["trait"] == "animal_savagery"
     assert event.effects[0].outcome == "passed"
+    narrative = timeline.to_narrative_dict()["events"][0]
+    assert narrative["effects"][0]["details"]["trait"] == "animal_savagery"
+
+
+def test_failed_unchannelled_fury_is_normalized_as_negatrait():
+    step = "<PlayerStep><PlayerId>37</PlayerId><TargetId>-1</TargetId><StepType>0</StepType></PlayerStep>"
+    roll = "<ResultRoll><Requirement>2</Requirement><Dice><Die><Value>1</Value></Die></Dice><RollType>35</RollType><Outcome>0</Outcome></ResultRoll>"
+    xml = f"<Replay><Rosters/><ReplayStep>{sequence(message('PlayerStep', step), message('ResultRoll', roll))}</ReplayStep></Replay>".encode()
+
+    event = Replay.from_xml(xml).timeline().events[0]
+
+    assert event.type == "negatrait_check"
+    assert event.actor.id == 37
+    assert event.outcome == "failed"
+    assert event.details["trait"] == "unchannelled_fury"
+    assert event.details["check"]["RollType"] == "35"
+
+
+def test_passed_take_root_is_kept_in_semantic_and_narrative_timelines():
+    step = "<PlayerStep><PlayerId>44</PlayerId><TargetId>-1</TargetId><StepType>0</StepType></PlayerStep>"
+    roll = "<ResultRoll><Requirement>2</Requirement><Dice><Die><Value>4</Value></Die></Dice><RollType>68</RollType><Outcome>1</Outcome></ResultRoll>"
+    xml = f"<Replay><Rosters/><ReplayStep>{sequence(message('PlayerStep', step), message('ResultRoll', roll))}</ReplayStep></Replay>".encode()
+
+    timeline = Replay.from_xml(xml).timeline()
+    event = timeline.events[0]
+
+    assert event.type == "negatrait_check"
+    assert event.outcome == "passed"
+    assert event.details["trait"] == "take_root"
+    narrative = timeline.to_narrative_dict()["events"][0]
+    assert narrative["details"]["trait"] == "take_root"
 
 
 def test_narrative_export_is_compact_non_duplicated_and_keeps_context(tmp_path):

@@ -62,8 +62,10 @@ Pure movement has no semantic `target`; a target carried by the wire-level
 `PlayerStep` is retained as `details.action_target` for a later block, blitz or
 other declared action.
 
-Kick-off `DEVIATE` rolls are emitted as `kickoff_deviation`. Animal Savagery
-is emitted as `animal_savagery` with outcome `passed`, `teammate_hit`, or
+Kick-off `DEVIATE` rolls are emitted as `kickoff_deviation`. Activation
+negatraits are emitted as `negatrait_check` with the specific rule in
+`details.trait`; successful checks remain available to semantic consumers.
+Animal Savagery keeps the outcomes `passed`, `teammate_hit`, or
 `activation_lost`; the declared action target, eligible teammates, selected
 victim and resulting armour/injury effects are retained. A failed Foul
 Appearance check emits the declared action (for example `block`) with outcome
