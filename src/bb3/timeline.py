@@ -440,7 +440,10 @@ class ReplayTimeline:
     def _same_narrative_context(left: dict[str, Any], right: dict[str, Any]) -> bool:
         """Return True when two narrative events belong to the same playable turn."""
         comparable = False
-        for key in ("half", "drive", "team_turn", "team_id"):
+        # team_id is deliberately not part of the comparison: an interception
+        # check is performed by the defending team but still belongs to the
+        # passing team's turn/action.
+        for key in ("half", "drive", "team_turn", "turn"):
             left_value, right_value = left.get(key), right.get(key)
             if left_value is None or right_value is None:
                 continue
@@ -449,10 +452,63 @@ class ReplayTimeline:
                 return False
         return comparable
 
+    @staticmethod
+    def _narrative_resolution_step(event: dict[str, Any]) -> dict[str, Any]:
+        """Return a compact lossless description of a grouped action sub-event."""
+        return {
+            key: value for key, value in {
+                "id": event.get("id"),
+                "type": event.get("type"),
+                "actor": event.get("actor"),
+                "target": event.get("target"),
+                "outcome": event.get("outcome"),
+                "checks": event.get("checks"),
+                "effects": event.get("effects"),
+            }.items() if value not in (None, [], {})
+        }
+
     @classmethod
     def _group_narrative_sequences(cls, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Collapse one rules action and its immediate consequences into one narrative event."""
         grouped: list[dict[str, Any]] = []
+        pass_resolution_types = {
+            "pass", "interception", "catch", "ball_loose",
+            "possession_changed", "possession_gained",
+        }
+        action_types = {
+            "move", "block", "pass", "handoff", "foul", "throw_team_mate",
+            "stand_up", "negatrait_check",
+        }
+
+        def same_actor(left: dict[str, Any], right: dict[str, Any]) -> bool:
+            left_actor, right_actor = left.get("actor"), right.get("actor")
+            return left_actor is None or right_actor is None or left_actor == right_actor
+
+        def attach_turnover(turnover: dict[str, Any]) -> bool:
+            caused_by = turnover.get("caused_by")
+            for previous_index in range(len(grouped) - 1, -1, -1):
+                previous = grouped[previous_index]
+                grouped_ids = previous.get("details", {}).get("grouped_event_ids", [])
+                exact_cause = caused_by is not None and (
+                    previous.get("id") == caused_by or caused_by in grouped_ids
+                )
+                if caused_by is not None and not exact_cause:
+                    continue
+                if caused_by is None and not cls._same_narrative_context(previous, turnover):
+                    continue
+                if previous.get("type") not in action_types:
+                    continue
+                updated = dict(previous)
+                details = dict(updated.get("details", {}))
+                details["turnover"] = True
+                details["turnover_event_id"] = turnover.get("id")
+                if caused_by is not None:
+                    details["turnover_caused_by"] = caused_by
+                updated["details"] = details
+                grouped[previous_index] = updated
+                return True
+            return False
+
         index = 0
         while index < len(events):
             event = events[index]
@@ -470,52 +526,91 @@ class ReplayTimeline:
                     index += 1
                     continue
 
+            # Preserve successful activation checks in pybb3 output, but link them
+            # to the action they enabled. CyanideBowl may then hide the successful
+            # check without losing it for narrative generation.
+            if (
+                event.get("type") == "negatrait_check"
+                and event.get("outcome") == "passed"
+                and index + 1 < len(events)
+            ):
+                following = events[index + 1]
+                if (
+                    following.get("type") in action_types - {"negatrait_check"}
+                    and cls._same_narrative_context(event, following)
+                    and same_actor(event, following)
+                ):
+                    updated = dict(event)
+                    details = dict(updated.get("details", {}))
+                    details["action_event_id"] = following.get("id")
+                    updated["details"] = details
+                    event = updated
+
             if event.get("type") == "pass":
                 merged = dict(event)
                 merged_checks = list(event.get("checks", []))
                 merged_effects = list(event.get("effects", []))
                 details = dict(event.get("details", {}))
+                if event.get("actor") is not None:
+                    details.setdefault("passer", event.get("actor"))
+                if event.get("target") is not None:
+                    details.setdefault("receiver", event.get("target"))
+
                 grouped_ids: list[int | str] = []
+                resolution: list[dict[str, Any]] = []
                 follow = index + 1
                 while follow < len(events):
                     candidate = events[follow]
                     candidate_type = candidate.get("type")
-                    if candidate_type not in {"interception", "catch", "ball_loose"}:
+                    if candidate_type not in pass_resolution_types:
                         break
                     if not cls._same_narrative_context(event, candidate):
                         break
-                    grouped_ids.append(candidate.get("id"))
+                    if candidate_type == "pass" and not same_actor(event, candidate):
+                        break
+
+                    candidate_id = candidate.get("id")
+                    if candidate_id is not None:
+                        grouped_ids.append(candidate_id)
+                    resolution.append(cls._narrative_resolution_step(candidate))
                     merged_checks.extend(candidate.get("checks", []))
                     merged_effects.extend(candidate.get("effects", []))
+
+                    if candidate_type == "pass":
+                        if merged.get("actor") is None and candidate.get("actor") is not None:
+                            merged["actor"] = candidate.get("actor")
+                            details["passer"] = candidate.get("actor")
+                        if merged.get("target") is None and candidate.get("target") is not None:
+                            merged["target"] = candidate.get("target")
+                            details["receiver"] = candidate.get("target")
+                    if candidate_type == "catch" and details.get("receiver") is None:
+                        details["receiver"] = candidate.get("actor") or candidate.get("target")
                     if candidate_type == "ball_loose":
                         details["ball_loose"] = True
+                    if candidate_type == "possession_gained":
+                        details["possession_gained"] = candidate.get("actor")
+                    if candidate_type == "possession_changed":
+                        details["possession_changed"] = candidate.get("actor")
                     follow += 1
+
+                if merged.get("target") is None and details.get("receiver") is not None:
+                    merged["target"] = details["receiver"]
+                if merged.get("target") is None and details.get("receiver") is not None:
+                    merged["target"] = details["receiver"]
                 if grouped_ids:
                     details["grouped_event_ids"] = grouped_ids
-                    merged["checks"] = merged_checks
-                    if merged_effects:
-                        merged["effects"] = merged_effects
-                    merged["details"] = details
-                    grouped.append(merged)
-                    index = follow
-                    continue
+                if resolution:
+                    details["resolution"] = resolution
+                merged["checks"] = merged_checks
+                if merged_effects:
+                    merged["effects"] = merged_effects
+                merged["details"] = details
+                grouped.append(merged)
+                index = follow
+                continue
 
             if event.get("type") == "turn_end" and event.get("outcome") == "turnover":
-                # Keep the turnover as a property of the action that caused it,
-                # not as another visual/narrative action.
-                for previous_index in range(len(grouped) - 1, -1, -1):
-                    previous = grouped[previous_index]
-                    if not cls._same_narrative_context(previous, event):
-                        continue
-                    if previous.get("type") in {"ball_loose", "bounce", "scatter"}:
-                        continue
-                    updated = dict(previous)
-                    details = dict(updated.get("details", {}))
-                    details["turnover"] = True
-                    details["turnover_event_id"] = event.get("id")
-                    updated["details"] = details
-                    grouped[previous_index] = updated
-                    break
+                attach_turnover(event)
                 index += 1
                 continue
 
@@ -891,6 +986,24 @@ class _Parser:
                 # it. This also preserves every Multiple Block consequence.
                 results.extend(self._reduce(messages[start:end]))
             return results
+
+        # Simple activation negatraits may share an execute sequence with the
+        # action that follows them. Extract the check before reducing the action
+        # so Block/Pass/Move cannot swallow it.
+        negatrait = self._negatrait_event(messages, actor, clock, sequences, evidence)
+        action_evidence = evidence
+        if negatrait is not None:
+            action_evidence = dict(evidence)
+            simple_roll_types = {int(value) for value in self._NEGATRAIT_ROLLS}
+            action_evidence["messages"] = [
+                message for message in evidence.get("messages", [])
+                if not (
+                    message.get("type") == "ResultRoll"
+                    and isinstance(message.get("data"), dict)
+                    and _int(str(message["data"].get("RollType"))) in simple_roll_types
+                )
+            ]
+
         if blocks:
             block = blocks[-1].node
             actor = self._who(_int(_text(block, "AttackerId"))) or actor
@@ -916,9 +1029,12 @@ class _Parser:
                 roll = armour[-1].node
                 effects.append(TimelineEffect("armour_roll", target, _text(roll, "Outcome") == "1", _data(roll)))
             effects.extend(self._damage_effects(messages, target))
-            return [self._event("block", clock, actor=actor, target=target,
+            block_event = self._event(
+                "block", clock, actor=actor, target=target,
                 outcome=outcome, effects=tuple(effects),
-                source_sequences=sequences, details=evidence)]
+                source_sequences=sequences, details=action_evidence,
+            )
+            return ([negatrait] if negatrait is not None else []) + [block_event]
         step_code = _int(_text(steps[-1].node, "StepType")) if steps else None
         action_types = {
             StepType.PASS: "pass", StepType.CATCH: "catch", StepType.HANDOFF: "handoff",
@@ -936,8 +1052,12 @@ class _Parser:
                              if _int(_text(x.node, "RollType")) == expected_roll), None)
             success = None if relevant is None else _text(relevant.node, "Outcome") != "0"
             effects = self._roll_effects(messages, actor) + self._damage_effects(messages, target)
-            return [self._event(action_types[StepType(step_code)], clock, actor=actor, target=target,
-                outcome=success, effects=tuple(effects), source_sequences=sequences, details=evidence)]
+            action_event = self._event(
+                action_types[StepType(step_code)], clock, actor=actor, target=target,
+                outcome=success, effects=tuple(effects),
+                source_sequences=sequences, details=action_evidence,
+            )
+            return ([negatrait] if negatrait is not None else []) + [action_event]
         moves = self._find(messages, "ResultMoveOutcome")
         if steps and moves:
             effects = self._roll_effects(messages, actor) + self._damage_effects(messages, actor)
@@ -953,13 +1073,16 @@ class _Parser:
                 if movement_rolls
                 else any(effect.type == "injury" for effect in effects)
             )
-            evidence.update({"from": _data(_direct(steps[0].node, "CellFrom")),
-                             "to": _data(_direct(steps[-1].node, "CellTo"))})
+            action_evidence.update({"from": _data(_direct(steps[0].node, "CellFrom")),
+                                    "to": _data(_direct(steps[-1].node, "CellTo"))})
             if target is not None:
-                evidence["action_target"] = asdict(target)
-            return [self._event("move", clock, actor=actor,
+                action_evidence["action_target"] = asdict(target)
+            move_event = self._event(
+                "move", clock, actor=actor,
                 outcome="failed" if failed else "completed", effects=tuple(effects),
-                source_sequences=sequences, details=evidence)]
+                source_sequences=sequences, details=action_evidence,
+            )
+            return ([negatrait] if negatrait is not None else []) + [move_event]
         animal_savagery = self._animal_savagery_event(
             messages, actor, target, clock, sequences, evidence
         )
@@ -982,7 +1105,6 @@ class _Parser:
                 )]
             return [animal_savagery]
 
-        negatrait = self._negatrait_event(messages, actor, clock, sequences, evidence)
         if negatrait is not None:
             return [negatrait]
 
@@ -1192,6 +1314,11 @@ class _Parser:
                         if changed_team is None and game_phase == 5:
                             changed_team = 0
                         if changed_team is not None:
+                            # Snapshot the turn owner only at a clean turn boundary.
+                            # A late ActiveGamerChanged in the same ReplayStep must
+                            # not relabel the turn that is about to end.
+                            if turn_owner is None and not current and not pending:
+                                turn_owner = changed_team
                             active_team = changed_team
                             self.active_team_id = changed_team
                     event_name = _name(outer)
@@ -1199,6 +1326,18 @@ class _Parser:
                         # Flush while active_player_id still identifies the actor.
                         # EventEndTurn clears it in _outer().
                         flush()
+                        if _text(outer, "Reason") == "2":
+                            # Make turnover causality explicit. Board-state ball
+                            # events are consequences; the latest semantic action
+                            # (including a failed negatrait) is the cause.
+                            for candidate in reversed(current):
+                                if candidate.type in {
+                                    "ball_loose", "possession_gained",
+                                    "possession_changed", "bounce", "scatter",
+                                }:
+                                    continue
+                                self.cause_event_id = candidate.id
+                                break
                     semantic = self._outer(outer, clock)
                     if semantic:
                         if event_name != "EventEndTurn":

@@ -2,6 +2,7 @@ import base64
 import json
 
 from bb3.replay import Replay
+from bb3.timeline import ReplayTimeline
 
 
 def b64(value: str) -> str:
@@ -463,3 +464,122 @@ def test_touchdown_board_release_does_not_emit_ball_loose():
 
     assert any(event.type == "touchdown" for event in timeline.events)
     assert not any(event.type == "ball_loose" for event in timeline.events)
+
+def test_block_does_not_swallow_simple_negatrait_check():
+    roster0 = f"<TeamRoster><Players><PlayerData><Name>{b64('Alenyel')}</Name><Id>1</Id></PlayerData></Players><Name>{b64('Elves')}</Name><Team><TeamId>0</TeamId></Team></TeamRoster>"
+    roster1 = f"<TeamRoster><Players><PlayerData><Name>{b64('Delicious')}</Name><Id>2</Id></PlayerData></Players><Name>{b64('Gods')}</Name><Team><TeamId>1</TeamId></Team></TeamRoster>"
+    step = "<PlayerStep><PlayerId>1</PlayerId><TargetId>2</TargetId><StepType>6</StepType></PlayerStep>"
+    fury = "<ResultRoll><Requirement>4</Requirement><Dice><Die><Value>1</Value></Die></Dice><RollType>35</RollType><Outcome>0</Outcome></ResultRoll>"
+    block = "<ResultBlockOutcome><AttackerId>1</AttackerId><DefenderId>2</DefenderId><Outcome>1</Outcome></ResultBlockOutcome>"
+    xml = f"<Replay><Rosters>{roster0}{roster1}</Rosters><ReplayStep>{sequence(message('PlayerStep', step), message('ResultRoll', fury), message('ResultBlockOutcome', block))}</ReplayStep></Replay>".encode()
+
+    timeline = Replay.from_xml(xml).timeline()
+
+    assert [event.type for event in timeline.events] == ["negatrait_check", "block"]
+    assert timeline.events[0].details["trait"] == "unchannelled_fury"
+    assert timeline.events[0].actor.name == "Alenyel"
+    assert timeline.events[1].actor.name == "Alenyel"
+    assert timeline.events[1].target.name == "Delicious"
+    narrative = timeline.to_narrative_dict(include_moves=True)["events"]
+    block_event = next(event for event in narrative if event["type"] == "block")
+    assert all(check["type"] != "unchannelled_fury" for check in block_event.get("checks", []))
+
+
+def test_turnover_has_explicit_caused_by_action():
+    step = "<PlayerStep><PlayerId>7</PlayerId><TargetId>-1</TargetId><StepType>1</StepType></PlayerStep>"
+    dodge = "<ResultRoll><Requirement>2</Requirement><Dice><Die><Value>1</Value></Die></Dice><RollType>2</RollType><Outcome>0</Outcome></ResultRoll>"
+    move = "<ResultMoveOutcome><Moved>0</Moved></ResultMoveOutcome>"
+    xml = f"<Replay><Rosters/><ReplayStep>{sequence(message('PlayerStep', step), message('ResultRoll', dodge), message('ResultMoveOutcome', move))}<EventEndTurn><Reason>2</Reason></EventEndTurn></ReplayStep></Replay>".encode()
+
+    timeline = Replay.from_xml(xml).timeline()
+    move_event = next(event for event in timeline.events if event.type == "move")
+    turnover = next(event for event in timeline.events if event.type == "turn_end")
+
+    assert turnover.outcome == "turnover"
+    assert turnover.caused_by == move_event.id
+    narrative = timeline.to_narrative_dict()["events"]
+    grouped_move = next(event for event in narrative if event["type"] == "move")
+    assert grouped_move["details"]["turnover"] is True
+    assert grouped_move["details"]["turnover_caused_by"] == move_event.id
+    assert not any(event["type"] == "turn_end" for event in narrative)
+
+
+def test_pass_resolution_is_one_semantic_action():
+    passer = {"kind": "player", "id": 10}
+    receiver = {"kind": "player", "id": 11}
+    interceptor = {"kind": "player", "id": 20}
+    context = {"half": 1, "drive": 1, "team_turn": 3}
+    events = [
+        {
+            "id": 1, "type": "pass", **context,
+            "actor": passer, "target": receiver,
+            "checks": [{
+                "type": "pass", "outcome": "passed",
+                "attempts": [
+                    {"dice": [2], "outcome": "failed"},
+                    {"dice": [6], "outcome": "passed", "reroll": "team"},
+                ],
+            }],
+        },
+        {
+            "id": 2, "type": "interception", **context,
+            "actor": interceptor,
+            "checks": [{
+                "type": "interception", "outcome": "failed",
+                "attempts": [{"dice": [2], "outcome": "failed"}],
+            }],
+        },
+        {
+            "id": 3, "type": "catch", **context,
+            "actor": receiver,
+            "checks": [{
+                "type": "catch", "outcome": "failed",
+                "attempts": [{"dice": [1], "outcome": "failed"}],
+            }],
+        },
+        {
+            "id": 4, "type": "ball_loose", **context,
+            "target": receiver,
+        },
+        {
+            "id": 5, "type": "turn_end", "outcome": "turnover",
+            "caused_by": 1, **context,
+        },
+    ]
+
+    grouped = ReplayTimeline._group_narrative_sequences(events)
+
+    assert len(grouped) == 1
+    action = grouped[0]
+    assert action["type"] == "pass"
+    assert action["actor"] == passer
+    assert action["target"] == receiver
+    assert [check["type"] for check in action["checks"]] == [
+        "pass", "interception", "catch",
+    ]
+    assert action["details"]["ball_loose"] is True
+    assert action["details"]["turnover"] is True
+    assert action["details"]["turnover_caused_by"] == 1
+    assert [step["type"] for step in action["details"]["resolution"]] == [
+        "interception", "catch", "ball_loose",
+    ]
+
+
+def test_pass_can_group_opponent_interception_in_same_turn():
+    events = [
+        {
+            "id": 1, "type": "pass", "half": 1, "drive": 1,
+            "team_turn": 4, "team_id": 0,
+            "actor": {"kind": "player", "id": 1},
+        },
+        {
+            "id": 2, "type": "interception", "half": 1, "drive": 1,
+            "team_turn": 4, "team_id": 1,
+            "actor": {"kind": "player", "id": 2},
+        },
+    ]
+
+    grouped = ReplayTimeline._group_narrative_sequences(events)
+
+    assert len(grouped) == 1
+    assert grouped[0]["details"]["resolution"][0]["type"] == "interception"
